@@ -17,6 +17,16 @@ let motivoBloqueio = 'unactivated';
 const _s = [77, 65, 68, 69, 73, 82, 65, 50, 48, 50, 54]; // MADEIRA2026
 const MEU_SEGREDO = process.env.APP_SECRET || String.fromCharCode(..._s);
 
+const CHAVE_PUBLICA_RSA = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvLEnwpiuSuFwZHGf4p1T
+6S2HG7RD/e4LL1TlfjxwGoFrJHc+Mkj7v/Z9D0SD/P5glN65m+0NSloKVIGplXGO
+O2njHUEBoL1OKzqHiazdwE8o6V+/kMzt1cPHNJOgg7puLgAw5nOjrwH28lqcezmW
+S4h9Hfe0e2jlMcg4a2wFzdiLNVpnKk+YaPStm2fZdpol+dTi79xCVdcvBJzSlDM5
+LKntIrdtump3z5jrzLsZaal3Ok7VONHCmywpOOfa38vBwkKjvwC0AfDjdkgA2Zgt
+DjOGJjVa6W/XuSXU+neGE1yKAL4/2EA/PR5iy+zdRrsef+YSdUEzBuCeFw0Dy8+H
+9QIDAQAB
+-----END PUBLIC KEY-----`;
+
 function criptografar(texto) {
   const key = crypto.createHash('sha256').update(MEU_SEGREDO).digest();
   const iv = crypto.createHash('md5').update(MEU_SEGREDO).digest();
@@ -818,35 +828,65 @@ ipcMain.handle('check-activation-status', () => {
 ipcMain.handle('ativar-sistema', async (event, chaveDigitada) => {
   try {
     const idHardware = getHardwareId();
-    const chaveEsperada = Buffer.from(idHardware + MEU_SEGREDO).toString('base64');
-
-    if (chaveDigitada === chaveEsperada) {
-      const appData = app.getPath('userData');
-      const pastaLicenca = path.join(appData, 'romaneio-madeira');
-      const arquivoLicenca = path.join(pastaLicenca, 'license.dat');
-
-      if (!fs.existsSync(pastaLicenca)) {
-        fs.mkdirSync(pastaLicenca, { recursive: true });
-      }
-
-      // Validade de 30 dias para a ativação inicial
-      const expiraEm = new Date();
-      expiraEm.setDate(expiraEm.getDate() + 30);
-
-      const novaLicenca = {
-        mid: idHardware,
-        exp: expiraEm.toISOString(),
-        last_seen: new Date().toISOString()
-      };
-
-      fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(novaLicenca)));
-
-      sistemaAtivado = true;
-      motivoBloqueio = 'ok';
-      return { success: true, validade: expiraEm.toLocaleDateString('pt-BR') };
-    } else {
-      return { success: false, error: 'Chave de licença inválida para este computador.' };
+    
+    // 1. Decodifica o token Base64 enviado pelo cliente
+    let licencaPacote;
+    try {
+      const jsonString = Buffer.from(chaveDigitada, 'base64').toString('utf8');
+      licencaPacote = JSON.parse(jsonString);
+    } catch (e) {
+      return { success: false, error: 'Chave de licença em formato inválido ou corrompida.' };
     }
+
+    if (!licencaPacote || !licencaPacote.data || !licencaPacote.signature) {
+      return { success: false, error: 'Chave de licença incompleta ou corrompida.' };
+    }
+
+    const { data, signature } = licencaPacote;
+
+    // 2. Valida o Hardware ID
+    if (data.mid !== idHardware) {
+      return { success: false, error: 'Esta chave de licença não pertence a este computador.' };
+    }
+
+    // 3. Valida a Assinatura RSA
+    const dadosString = JSON.stringify(data);
+    const verifier = crypto.createVerify('SHA256');
+    verifier.update(dadosString);
+    const assinaturaValida = verifier.verify(CHAVE_PUBLICA_RSA, signature, 'base64');
+
+    if (!assinaturaValida) {
+      return { success: false, error: 'Assinatura digital inválida. Chave de ativação falsificada!' };
+    }
+
+    // 4. Valida se a data de expiração da chave já passou
+    const agora = new Date();
+    const expiraEm = new Date(data.exp);
+    if (agora > expiraEm) {
+      return { success: false, error: 'A chave de licença fornecida já está expirada.' };
+    }
+
+    // Gravando licença ativada localmente com AES
+    const appData = app.getPath('userData');
+    const pastaLicenca = path.join(appData, 'romaneio-madeira');
+    const arquivoLicenca = path.join(pastaLicenca, 'license.dat');
+
+    if (!fs.existsSync(pastaLicenca)) {
+      fs.mkdirSync(pastaLicenca, { recursive: true });
+    }
+
+    const novaLicenca = {
+      mid: idHardware,
+      exp: data.exp,
+      last_seen: agora.toISOString()
+    };
+
+    fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(novaLicenca)));
+
+    sistemaAtivado = true;
+    motivoBloqueio = 'ok';
+    return { success: true, validade: expiraEm.toLocaleDateString('pt-BR') };
+
   } catch (err) {
     console.error("Erro na ativação do sistema:", err.message);
     return { success: false, error: 'Erro interno ao processar ativação: ' + err.message };

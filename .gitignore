@@ -12,6 +12,7 @@ dist
 dist-ssr
 dist-electron
 public/electron.jsc
+*.key
 .env
 .env.local
 *.local
