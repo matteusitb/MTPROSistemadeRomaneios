@@ -66,6 +66,17 @@ export interface ElectronAPI {
 
   // Hardware ID
   getHardwareId: () => Promise<string>;
+
+  // Auto-Update
+  checkForUpdates: () => Promise<{ success: boolean; isDev?: boolean; error?: string }>;
+  downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
+  installUpdate: () => Promise<void>;
+  onUpdateChecking: (callback: () => void) => () => void;
+  onUpdateAvailable: (callback: (info: { version: string; releaseNotes?: string }) => void) => () => void;
+  onUpdateNotAvailable: (callback: () => void) => () => void;
+  onUpdateError: (callback: (error: string) => void) => () => void;
+  onDownloadProgress: (callback: (progress: { percent: number; bytesPerSecond: number; transferred: number; total: number }) => void) => () => void;
+  onUpdateDownloaded: (callback: () => void) => () => void;
 }
 
 declare global {

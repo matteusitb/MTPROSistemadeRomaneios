@@ -5,6 +5,7 @@ const initSqlJs = require('sql.js');
 const os = require('os');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
+const { autoUpdater } = require('electron-updater');
 
 let db;
 let mainWindow;
@@ -574,4 +575,100 @@ ipcMain.handle('get-hardware-id', () => {
     return crypto.createHash('sha256').update(os.hostname() || 'fallback').digest('hex');
   }
 });
+
+// ─── AUTO UPDATER CONFIG & LISTENERS ─────────────────────────────────────────
+
+autoUpdater.autoDownload = false;
+autoUpdater.logger = console;
+
+autoUpdater.on('checking-for-update', () => {
+  if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('update-checking');
+  }
+});
+
+autoUpdater.on('update-available', (info) => {
+  if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('update-available', {
+      version: info.version,
+      releaseNotes: info.releaseNotes
+    });
+  }
+});
+
+autoUpdater.on('update-not-available', () => {
+  if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('update-not-available');
+  }
+});
+
+autoUpdater.on('error', (err) => {
+  if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('update-error', err.message || err);
+  }
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+  if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('download-progress', {
+      percent: progressObj.percent,
+      bytesPerSecond: progressObj.bytesPerSecond,
+      transferred: progressObj.transferred,
+      total: progressObj.total
+    });
+  }
+});
+
+autoUpdater.on('update-downloaded', () => {
+  if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('update-downloaded');
+  }
+});
+
+// ─── IPC: AUTO UPDATER HANDLERS ─────────────────────────────────────────────
+
+ipcMain.handle('check-for-updates', async () => {
+  try {
+    const isDev = !app.isPackaged;
+    if (isDev) {
+      // Simulação em ambiente de desenvolvimento
+      if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('update-checking');
+      }
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+          mainWindow.webContents.send('update-not-available');
+        }
+      }, 1500);
+      return { success: true, isDev: true };
+    }
+    
+    const result = await autoUpdater.checkForUpdates();
+    return { success: true, result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('download-update', async () => {
+  try {
+    const isDev = !app.isPackaged;
+    if (isDev) {
+      return { success: false, error: 'O download de atualizações não está disponível em ambiente de desenvolvimento.' };
+    }
+    await autoUpdater.downloadUpdate();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('install-update', () => {
+  try {
+    autoUpdater.quitAndInstall();
+  } catch (error) {
+    console.error('Erro ao instalar atualização:', error.message);
+  }
+});
+
 

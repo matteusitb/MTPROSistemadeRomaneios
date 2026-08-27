@@ -1,7 +1,7 @@
 {
   "name": "app",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "public/electron.cjs",
   "scripts": {
@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
+    "electron-updater": "^6.8.9",
     "framer-motion": "^12.40.0",
     "lucide-react": "^1.16.0",
     "pdfmake": "^0.3.9",
@@ -48,5 +49,30 @@
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
     "wait-on": "^9.0.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SEU_USUARIO_GITHUB/NOME_DO_REPOSITORIO.git"
+  },
+  "build": {
+    "appId": "com.romaneio.madeiraserrada",
+    "productName": "RomaneioMadeiraSerrada",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "SEU_USUARIO_GITHUB",
+      "repo": "NOME_DO_REPOSITORIO"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

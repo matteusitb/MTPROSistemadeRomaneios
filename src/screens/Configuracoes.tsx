@@ -3,7 +3,7 @@ import {
   Database, HardDriveDownload, FolderOpen, Clock, Shield,
   ToggleLeft, ToggleRight, Save, Trash2, AlertTriangle,
   CheckCircle2, XCircle, Copy, Check, X, RefreshCw,
-  Plus, Search, Pencil
+  Plus, Search, Pencil, ArrowUpCircle, Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Swal from 'sweetalert2';
@@ -60,9 +60,96 @@ export default function Configuracoes() {
   // Novo estado para o input de horário
   const [novoHorario, setNovoHorario] = useState('18:00');
 
+  // Estados do Auto-Updater
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; releaseNotes?: string } | null>(null);
+  const [updateNotAvailable, setUpdateNotAvailable] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<{ percent: number; bytesPerSecond: number; transferred: number; total: number } | null>(null);
+  const [updateDownloaded, setUpdateDownloaded] = useState(false);
+  const [checkingError, setCheckingError] = useState<string | null>(null);
+
   useEffect(() => {
     carregarDados();
+
+    // Configura os listeners de atualização do Electron
+    const unsubscribeChecking = window.electronAPI.onUpdateChecking(() => {
+      setUpdateChecking(true);
+      setUpdateAvailable(null);
+      setUpdateNotAvailable(false);
+      setUpdateError(null);
+      setDownloadProgress(null);
+      setUpdateDownloaded(false);
+      setCheckingError(null);
+    });
+
+    const unsubscribeAvailable = window.electronAPI.onUpdateAvailable((info) => {
+      setUpdateChecking(false);
+      setUpdateAvailable(info);
+      setUpdateNotAvailable(false);
+      setUpdateError(null);
+    });
+
+    const unsubscribeNotAvailable = window.electronAPI.onUpdateNotAvailable(() => {
+      setUpdateChecking(false);
+      setUpdateAvailable(null);
+      setUpdateNotAvailable(true);
+      setUpdateError(null);
+    });
+
+    const unsubscribeError = window.electronAPI.onUpdateError((err) => {
+      setUpdateChecking(false);
+      setUpdateError(err);
+      setUpdateAvailable(null);
+    });
+
+    const unsubscribeProgress = window.electronAPI.onDownloadProgress((progress) => {
+      setDownloadProgress(progress);
+    });
+
+    const unsubscribeDownloaded = window.electronAPI.onUpdateDownloaded(() => {
+      setUpdateDownloaded(true);
+      setDownloadProgress(null);
+    });
+
+    return () => {
+      unsubscribeChecking();
+      unsubscribeAvailable();
+      unsubscribeNotAvailable();
+      unsubscribeError();
+      unsubscribeProgress();
+      unsubscribeDownloaded();
+    };
   }, []);
+
+  const handleCheckForUpdates = async () => {
+    setCheckingError(null);
+    setUpdateNotAvailable(false);
+    setUpdateError(null);
+    try {
+      const res = await window.electronAPI.checkForUpdates();
+      if (!res.success) {
+        setCheckingError(res.error || 'Erro desconhecido ao verificar atualizações.');
+      }
+    } catch (e: any) {
+      setCheckingError(e.message || 'Falha de comunicação.');
+    }
+  };
+
+  const handleDownloadUpdate = async () => {
+    try {
+      const res = await window.electronAPI.downloadUpdate();
+      if (!res.success) {
+        setUpdateError(res.error || 'Erro ao iniciar download.');
+      }
+    } catch (e: any) {
+      setUpdateError(e.message || 'Falha de comunicação.');
+    }
+  };
+
+  const handleInstallUpdate = () => {
+    window.electronAPI.installUpdate();
+  };
 
   useEffect(() => {
     if (resetModalAberto) {
@@ -639,10 +726,123 @@ export default function Configuracoes() {
 
             <button
               onClick={() => setResetModalAberto(true)}
-              className="w-full bg-white dark:bg-slate-900 hover:bg-red-50 dark:hover:bg-red-950/20 text-red-600 dark:text-red-400 border-2 border-red-200 dark:border-red-900/60 hover:border-red-300 dark:hover:border-red-750 px-6 py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-3 hover:-translate-y-0.5 shadow-sm hover:shadow-md hover:shadow-red-500/10"
+              className="w-full bg-white dark:bg-slate-900 hover:bg-red-50 dark:hover:bg-red-955/20 text-red-600 dark:text-red-400 border-2 border-red-200 dark:border-red-900/60 hover:border-red-300 dark:hover:border-red-750 px-6 py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-3 hover:-translate-y-0.5 shadow-sm hover:shadow-md hover:shadow-red-500/10"
             >
               <Trash2 size={20} strokeWidth={2.5} /> Resetar Banco de Dados
             </button>
+          </motion.div>
+
+          {/* ── ATUALIZAÇÕES DO SISTEMA ── */}
+          <motion.div variants={itemVariants} className="glass-card p-8 flex flex-col gap-6">
+            <div className="flex items-center gap-4">
+              <div className="bg-fuchsia-50 dark:bg-fuchsia-950/30 text-fuchsia-600 dark:text-fuchsia-400 p-3.5 rounded-2xl">
+                <ArrowUpCircle size={26} strokeWidth={2} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Atualizações do Sistema</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">Versão instalada: v1.0.0</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-950 rounded-2xl p-5 space-y-4 border border-slate-100 dark:border-slate-800 min-h-[140px] flex flex-col justify-center">
+              {!updateChecking && !updateAvailable && !updateNotAvailable && !updateError && !checkingError && !updateDownloaded && (
+                <div className="text-center py-4">
+                  <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Verifique se existem atualizações disponíveis para obter novos recursos e correções.</p>
+                </div>
+              )}
+
+              {updateChecking && (
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <RefreshCw size={24} className="animate-spin text-fuchsia-500" />
+                  <span className="text-sm font-bold text-slate-600 dark:text-slate-350">Buscando atualizações no servidor...</span>
+                </div>
+              )}
+
+              {updateAvailable && !downloadProgress && !updateDownloaded && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-fuchsia-600 dark:text-fuchsia-400">
+                    <CheckCircle2 size={18} />
+                    <span className="text-sm font-black">Nova versão {updateAvailable.version} disponível!</span>
+                  </div>
+                  {updateAvailable.releaseNotes && (
+                    <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-3 max-h-24 overflow-y-auto text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-semibold">
+                      <span className="font-bold block mb-1">Notas de versão:</span>
+                      <div dangerouslySetInnerHTML={{ __html: updateAvailable.releaseNotes }} />
+                    </div>
+                  )}
+                  <button
+                    onClick={handleDownloadUpdate}
+                    className="w-full bg-fuchsia-600 hover:bg-fuchsia-500 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Download size={14} strokeWidth={2.5} /> Baixar Atualização
+                  </button>
+                </div>
+              )}
+
+              {downloadProgress && !updateDownloaded && (
+                <div className="space-y-3">
+                  <div className="flex justify-between text-xs font-bold text-slate-600 dark:text-slate-350">
+                    <span>Baixando atualização...</span>
+                    <span>{Math.round(downloadProgress.percent)}%</span>
+                  </div>
+                  <div className="w-full bg-slate-200 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-fuchsia-500 h-full rounded-full transition-all duration-300"
+                      style={{ width: `${downloadProgress.percent}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-400 font-semibold">
+                    <span>Transferido: {formatBytes(downloadProgress.transferred)} de {formatBytes(downloadProgress.total)}</span>
+                    <span>{(downloadProgress.bytesPerSecond / 1024 / 1024).toFixed(2)} MB/s</span>
+                  </div>
+                </div>
+              )}
+
+              {updateDownloaded && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 size={18} />
+                    <span className="text-sm font-black">Atualização baixada com sucesso!</span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">O aplicativo precisa ser reiniciado para aplicar a nova versão.</p>
+                  <button
+                    onClick={handleInstallUpdate}
+                    className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-4 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <RefreshCw size={14} className="animate-spin-slow" /> Reiniciar e Instalar
+                  </button>
+                </div>
+              )}
+
+              {updateNotAvailable && (
+                <div className="flex flex-col items-center gap-2 py-4">
+                  <CheckCircle2 size={24} className="text-emerald-500" />
+                  <span className="text-sm font-black text-slate-700 dark:text-slate-200">Você já está usando a versão mais recente!</span>
+                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Última checagem: {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+              )}
+
+              {(updateError || checkingError) && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-red-500">
+                    <AlertTriangle size={18} />
+                    <span className="text-sm font-black">Falha na atualização</span>
+                  </div>
+                  <p className="text-xs text-red-500 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 rounded-xl p-3 font-mono break-all max-h-24 overflow-y-auto">
+                    {updateError || checkingError}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {!updateChecking && !downloadProgress && !updateDownloaded && (
+              <button
+                onClick={handleCheckForUpdates}
+                className="w-full bg-fuchsia-600 hover:bg-fuchsia-500 text-white px-6 py-4 rounded-2xl font-bold shadow-xl shadow-fuchsia-600/10 transition-all flex items-center justify-center gap-3 hover:-translate-y-0.5 cursor-pointer"
+              >
+                <RefreshCw size={18} strokeWidth={2.5} /> Verificar Atualizações
+              </button>
+            )}
           </motion.div>
 
           {/* ── GERENCIAMENTO DE ESPÉCIES ── */}
