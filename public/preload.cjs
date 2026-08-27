@@ -55,6 +55,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const subscription = () => callback();
     ipcRenderer.on('update-downloaded', subscription);
     return () => ipcRenderer.removeListener('update-downloaded', subscription);
-  }
+  },
+
+  // Ativação e Anti-Clonagem
+  checkActivationStatus: () => ipcRenderer.invoke('check-activation-status'),
+  ativarSistema: (chave) => ipcRenderer.invoke('ativar-sistema', chave)
 });
 

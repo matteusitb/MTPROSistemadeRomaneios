@@ -10,6 +10,139 @@ const { autoUpdater } = require('electron-updater');
 let db;
 let mainWindow;
 
+// --- SEGURANÇA E ATIVAÇÃO ---
+let sistemaAtivado = false;
+let motivoBloqueio = 'unactivated';
+
+const _s = [77, 65, 68, 69, 73, 82, 65, 50, 48, 50, 54]; // MADEIRA2026
+const MEU_SEGREDO = process.env.APP_SECRET || String.fromCharCode(..._s);
+
+function criptografar(texto) {
+  const key = crypto.createHash('sha256').update(MEU_SEGREDO).digest();
+  const iv = crypto.createHash('md5').update(MEU_SEGREDO).digest();
+  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+  let crypted = cipher.update(texto, 'utf8', 'hex');
+  crypted += cipher.final('hex');
+  return crypted;
+}
+
+function descriptografar(texto) {
+  try {
+    const key = crypto.createHash('sha256').update(MEU_SEGREDO).digest();
+    const iv = crypto.createHash('md5').update(MEU_SEGREDO).digest();
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+    let dec = decipher.update(texto, 'hex', 'utf8');
+    dec += decipher.final('utf8');
+    return dec;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function verificarLicencaLocal() {
+  const appData = app.getPath('userData');
+  const pastaBase = path.join(appData, 'romaneio-madeira');
+  const arquivoLicenca = path.join(pastaBase, 'license.dat');
+
+  if (fs.existsSync(arquivoLicenca)) {
+    try {
+      const conteudoCriptografado = fs.readFileSync(arquivoLicenca, 'utf-8');
+      const conteudoJson = descriptografar(conteudoCriptografado);
+
+      if (!conteudoJson) {
+        sistemaAtivado = false;
+        motivoBloqueio = 'unactivated';
+        return false;
+      }
+
+      const licenca = JSON.parse(conteudoJson);
+      const machineId = getHardwareId();
+
+      // 1. Valida ID da Máquina
+      if (licenca.mid !== machineId) {
+        console.error("Máquina não autorizada para esta licença.");
+        sistemaAtivado = false;
+        motivoBloqueio = 'unactivated';
+        return false;
+      }
+
+      const agora = new Date();
+      const exp = new Date(licenca.exp);
+      const lastSeen = licenca.last_seen ? new Date(licenca.last_seen) : null;
+
+      // 2. Verifica Expiração
+      if (agora > exp) {
+        console.error(`Licença expirou em: ${licenca.exp}`);
+        sistemaAtivado = false;
+        motivoBloqueio = 'expired';
+        return false;
+      }
+
+      // 3. ANTI-FRAUDE: Relógio Retrocedido (comparando com last_seen da licença)
+      if (lastSeen && agora < lastSeen) {
+        console.error("🚨 DETECÇÃO DE FRAUDE: Relógio do computador retrocedido!");
+        sistemaAtivado = false;
+        motivoBloqueio = 'fraud';
+        return false;
+      }
+
+      // 4. ANTI-FRAUDE: Relógio Retrocedido (comparando com a maior data de romaneio salva no banco)
+      if (db) {
+        try {
+          const stmt = db.prepare("SELECT data FROM romaneios ORDER BY data DESC LIMIT 1");
+          let result = [];
+          while (stmt.step()) {
+            result.push(stmt.getAsObject());
+          }
+          stmt.free();
+          
+          if (result.length > 0 && result[0].data) {
+            const dataUltimoRomaneio = new Date(result[0].data + "T12:00:00");
+            const hojeSemHora = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+            const romaneioSemHora = new Date(dataUltimoRomaneio.getFullYear(), dataUltimoRomaneio.getMonth(), dataUltimoRomaneio.getDate());
+            
+            if (hojeSemHora < romaneioSemHora) {
+              console.error("🚨 DETECÇÃO DE FRAUDE: O relógio do computador é anterior à data do último romaneio salvo no banco de dados!");
+              sistemaAtivado = false;
+              motivoBloqueio = 'fraud';
+              return false;
+            }
+          }
+        } catch (e) {
+          // Ignora
+        }
+      }
+
+      licenca.last_seen = agora.toISOString();
+      fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(licenca)));
+
+      sistemaAtivado = true;
+      motivoBloqueio = 'ok';
+      return true;
+
+    } catch (err) {
+      console.error("Erro ao verificar licença:", err.message);
+      sistemaAtivado = false;
+      motivoBloqueio = 'unactivated';
+      return false;
+    }
+  }
+
+  sistemaAtivado = false;
+  motivoBloqueio = 'unactivated';
+  return false;
+}
+
+function protectedHandle(channel, callback) {
+  ipcMain.handle(channel, async (event, ...args) => {
+    if (!sistemaAtivado) {
+      console.warn(`Tentativa de acesso ao canal protegido '${channel}' sem ativação ativa.`);
+      return { success: false, error: 'Sistema bloqueado. Por favor, ative a licença de uso do sistema.' };
+    }
+    return callback(event, ...args);
+  });
+}
+
 async function initDB() {
   const SQL = await initSqlJs();
   const dbPath = path.join(app.getPath('userData'), 'romaneios.sqlite');
@@ -251,6 +384,7 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   await initDB();
+  await verificarLicencaLocal();
   scheduleAutoBackup();
   createWindow();
 
@@ -265,7 +399,7 @@ app.on('window-all-closed', function () {
 
 // ─── IPC: DB QUERY ───────────────────────────────────────────────────────────
 
-ipcMain.handle('db-query', (event, query, params) => {
+protectedHandle('db-query', (event, query, params) => {
   try {
     const stmt = db.prepare(query);
     if (params) {
@@ -282,7 +416,7 @@ ipcMain.handle('db-query', (event, query, params) => {
   }
 });
 
-ipcMain.handle('db-execute', (event, query, params) => {
+protectedHandle('db-execute', (event, query, params) => {
   try {
     if (params) {
       const stmt = db.prepare(query);
@@ -334,7 +468,7 @@ function getOrInsertEspecie(nome) {
   return res[0].values[0][0];
 }
 
-ipcMain.handle('save-romaneio', (event, data) => {
+protectedHandle('save-romaneio', (event, data) => {
   try {
     const cliente_id = getOrInsert('clientes', data.cliente);
 
@@ -372,7 +506,7 @@ ipcMain.handle('save-romaneio', (event, data) => {
   }
 });
 
-ipcMain.handle('update-romaneio', (event, data) => {
+protectedHandle('update-romaneio', (event, data) => {
   try {
     const { id } = data;
 
@@ -422,7 +556,7 @@ ipcMain.handle('update-romaneio', (event, data) => {
 
 // ─── IPC: BACKUP MANUAL ─────────────────────────────────────────────────────
 
-ipcMain.handle('backup-db', async (event, destPath) => {
+protectedHandle('backup-db', async (event, destPath) => {
   try {
     saveDB();
     const src = getDbFilePath();
@@ -450,7 +584,7 @@ ipcMain.handle('backup-db', async (event, destPath) => {
 
 // ─── IPC: SELECIONAR PASTA ──────────────────────────────────────────────────
 
-ipcMain.handle('select-folder', async () => {
+protectedHandle('select-folder', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     title: 'Selecionar Pasta para Backup Automático',
     properties: ['openDirectory', 'createDirectory'],
@@ -461,7 +595,7 @@ ipcMain.handle('select-folder', async () => {
 
 // ─── IPC: ABRIR PASTA ───────────────────────────────────────────────────────
 
-ipcMain.handle('open-backup-folder', async (event, folderPath) => {
+protectedHandle('open-backup-folder', async (event, folderPath) => {
   try {
     if (folderPath && fs.existsSync(folderPath)) {
       await shell.openPath(folderPath);
@@ -475,7 +609,7 @@ ipcMain.handle('open-backup-folder', async (event, folderPath) => {
 
 // ─── IPC: INFO DO BANCO ─────────────────────────────────────────────────────
 
-ipcMain.handle('get-db-info', () => {
+protectedHandle('get-db-info', () => {
   try {
     const dbPath = getDbFilePath();
     let sizeBytes = 0;
@@ -491,7 +625,7 @@ ipcMain.handle('get-db-info', () => {
 
 // ─── IPC: CONFIG BACKUP ─────────────────────────────────────────────────────
 
-ipcMain.handle('get-backup-config', () => {
+protectedHandle('get-backup-config', () => {
   try {
     return { success: true, config: readBackupConfig() };
   } catch (error) {
@@ -499,7 +633,7 @@ ipcMain.handle('get-backup-config', () => {
   }
 });
 
-ipcMain.handle('set-backup-config', (event, config) => {
+protectedHandle('set-backup-config', (event, config) => {
   try {
     writeBackupConfig({ ...readBackupConfig(), ...config });
     return { success: true };
@@ -510,7 +644,7 @@ ipcMain.handle('set-backup-config', (event, config) => {
 
 // ─── IPC: RESETAR BANCO (preserva espécies) ─────────────────────────────────
 
-ipcMain.handle('reset-romaneios-db', () => {
+protectedHandle('reset-romaneios-db', () => {
   try {
     db.run('DELETE FROM romaneio_itens');
     db.run('DELETE FROM romaneio_pacotes');
@@ -668,6 +802,54 @@ ipcMain.handle('install-update', () => {
     autoUpdater.quitAndInstall();
   } catch (error) {
     console.error('Erro ao instalar atualização:', error.message);
+  }
+});
+
+
+// ─── IPC: ATIVAÇÃO DE LICENÇA (ZONA DE SEGURANÇA) ───────────────────────────
+
+ipcMain.handle('check-activation-status', () => {
+  return {
+    ativado: sistemaAtivado,
+    motivo: motivoBloqueio
+  };
+});
+
+ipcMain.handle('ativar-sistema', async (event, chaveDigitada) => {
+  try {
+    const idHardware = getHardwareId();
+    const chaveEsperada = Buffer.from(idHardware + MEU_SEGREDO).toString('base64');
+
+    if (chaveDigitada === chaveEsperada) {
+      const appData = app.getPath('userData');
+      const pastaLicenca = path.join(appData, 'romaneio-madeira');
+      const arquivoLicenca = path.join(pastaLicenca, 'license.dat');
+
+      if (!fs.existsSync(pastaLicenca)) {
+        fs.mkdirSync(pastaLicenca, { recursive: true });
+      }
+
+      // Validade de 30 dias para a ativação inicial
+      const expiraEm = new Date();
+      expiraEm.setDate(expiraEm.getDate() + 30);
+
+      const novaLicenca = {
+        mid: idHardware,
+        exp: expiraEm.toISOString(),
+        last_seen: new Date().toISOString()
+      };
+
+      fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(novaLicenca)));
+
+      sistemaAtivado = true;
+      motivoBloqueio = 'ok';
+      return { success: true, validade: expiraEm.toLocaleDateString('pt-BR') };
+    } else {
+      return { success: false, error: 'Chave de licença inválida para este computador.' };
+    }
+  } catch (err) {
+    console.error("Erro na ativação do sistema:", err.message);
+    return { success: false, error: 'Erro interno ao processar ativação: ' + err.message };
   }
 });
 

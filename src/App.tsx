@@ -7,8 +7,9 @@ import EditarRomaneio from './screens/EditarRomaneio';
 import VisualizarRomaneio from './screens/VisualizarRomaneio';
 import Configuracoes from './screens/Configuracoes';
 import Login from './screens/Login';
+import Ativacao from './screens/Ativacao';
 import { useAuthStore } from './store/useAuthStore';
-import { Menu, User } from 'lucide-react';
+import { Menu, User, Loader2 } from 'lucide-react';
 
 function MainLayout() {
   const location = useLocation();
@@ -91,6 +92,9 @@ function MainLayout() {
 
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const [isActivated, setIsActivated] = useState(false);
+  const [activationMotivo, setActivationMotivo] = useState<'unactivated' | 'expired' | 'fraud' | 'ok'>('unactivated');
+  const [checkingActivation, setCheckingActivation] = useState(true);
 
   // Aplica o tema salvo no localStorage
   useEffect(() => {
@@ -101,6 +105,42 @@ function App() {
       document.body.classList.remove('dark-mode');
     }
   }, []);
+
+  const checkActivation = async () => {
+    try {
+      if (window.electronAPI && typeof window.electronAPI.checkActivationStatus === 'function') {
+        const res = await window.electronAPI.checkActivationStatus();
+        setIsActivated(res.ativado);
+        setActivationMotivo(res.motivo);
+      } else {
+        setIsActivated(true);
+        setActivationMotivo('ok');
+      }
+    } catch (e) {
+      console.error('Erro ao verificar licença:', e);
+      setIsActivated(true);
+      setActivationMotivo('ok');
+    } finally {
+      setCheckingActivation(false);
+    }
+  };
+
+  useEffect(() => {
+    checkActivation();
+  }, []);
+
+  if (checkingActivation) {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-955 font-sans">
+        <Loader2 className="w-10 h-10 text-emerald-500 animate-spin mb-4" />
+        <span className="text-sm font-bold text-slate-500 dark:text-slate-400">Verificando licença de uso...</span>
+      </div>
+    );
+  }
+
+  if (!isActivated) {
+    return <Ativacao onActivated={checkActivation} motivo={activationMotivo} />;
+  }
 
   if (!isAuthenticated) {
     return <Login />;

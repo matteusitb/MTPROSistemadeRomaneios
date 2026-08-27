@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 dist-electron
+public/electron.jsc
 .env
 .env.local
 *.local

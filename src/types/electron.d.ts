@@ -77,6 +77,10 @@ export interface ElectronAPI {
   onUpdateError: (callback: (error: string) => void) => () => void;
   onDownloadProgress: (callback: (progress: { percent: number; bytesPerSecond: number; transferred: number; total: number }) => void) => () => void;
   onUpdateDownloaded: (callback: () => void) => () => void;
+
+  // Ativação e Anti-Clonagem
+  checkActivationStatus: () => Promise<{ ativado: boolean; motivo: 'unactivated' | 'expired' | 'fraud' | 'ok' }>;
+  ativarSistema: (chave: string) => Promise<{ success: boolean; validade?: string; error?: string }>;
 }
 
 declare global {
