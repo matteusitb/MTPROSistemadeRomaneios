@@ -27,9 +27,15 @@ DjOGJjVa6W/XuSXU+neGE1yKAL4/2EA/PR5iy+zdRrsef+YSdUEzBuCeFw0Dy8+H
 9QIDAQAB
 -----END PUBLIC KEY-----`;
 
+function obterChaveAES() {
+  const hwId = getHardwareId();
+  const key = crypto.createHash('sha256').update(MEU_SEGREDO + hwId).digest();
+  const iv = crypto.createHash('md5').update(MEU_SEGREDO + hwId).digest();
+  return { key, iv };
+}
+
 function criptografar(texto) {
-  const key = crypto.createHash('sha256').update(MEU_SEGREDO).digest();
-  const iv = crypto.createHash('md5').update(MEU_SEGREDO).digest();
+  const { key, iv } = obterChaveAES();
   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
   let crypted = cipher.update(texto, 'utf8', 'hex');
   crypted += cipher.final('hex');
@@ -38,8 +44,7 @@ function criptografar(texto) {
 
 function descriptografar(texto) {
   try {
-    const key = crypto.createHash('sha256').update(MEU_SEGREDO).digest();
-    const iv = crypto.createHash('md5').update(MEU_SEGREDO).digest();
+    const { key, iv } = obterChaveAES();
     const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
     let dec = decipher.update(texto, 'hex', 'utf8');
     dec += decipher.final('utf8');
@@ -65,11 +70,52 @@ async function verificarLicencaLocal() {
         return false;
       }
 
-      const licenca = JSON.parse(conteudoJson);
-      const machineId = getHardwareId();
+      const licencaLocal = JSON.parse(conteudoJson);
+      
+      if (!licencaLocal || !licencaLocal.token || !licencaLocal.last_seen) {
+        console.error("Estrutura do arquivo de licença local inválida.");
+        sistemaAtivado = false;
+        motivoBloqueio = 'unactivated';
+        return false;
+      }
 
-      // 1. Valida ID da Máquina
-      if (licenca.mid !== machineId) {
+      // 1. Decodificar o token RSA original e validar sua assinatura digital RSA
+      let licencaPacote;
+      try {
+        const jsonString = Buffer.from(licencaLocal.token, 'base64').toString('utf8');
+        licencaPacote = JSON.parse(jsonString);
+      } catch (e) {
+        console.error("Erro ao decodificar token RSA salvo localmente.");
+        sistemaAtivado = false;
+        motivoBloqueio = 'unactivated';
+        return false;
+      }
+
+      if (!licencaPacote || !licencaPacote.data || !licencaPacote.signature) {
+        console.error("Token de licença salvo localmente está incompleto ou corrompido.");
+        sistemaAtivado = false;
+        motivoBloqueio = 'unactivated';
+        return false;
+      }
+
+      const { data, signature } = licencaPacote;
+      
+      // Valida assinatura RSA
+      const dadosString = JSON.stringify(data);
+      const verifier = crypto.createVerify('SHA256');
+      verifier.update(dadosString);
+      const assinaturaValida = verifier.verify(CHAVE_PUBLICA_RSA, signature, 'base64');
+
+      if (!assinaturaValida) {
+        console.error("🚨 CRÍTICO: Assinatura digital da licença local é inválida! Adulteração detectada.");
+        sistemaAtivado = false;
+        motivoBloqueio = 'unactivated';
+        return false;
+      }
+
+      // 2. Valida o Hardware ID
+      const machineId = getHardwareId();
+      if (data.mid !== machineId) {
         console.error("Máquina não autorizada para esta licença.");
         sistemaAtivado = false;
         motivoBloqueio = 'unactivated';
@@ -77,26 +123,26 @@ async function verificarLicencaLocal() {
       }
 
       const agora = new Date();
-      const exp = new Date(licenca.exp);
-      const lastSeen = licenca.last_seen ? new Date(licenca.last_seen) : null;
+      const exp = new Date(data.exp);
+      const lastSeen = new Date(licencaLocal.last_seen);
 
-      // 2. Verifica Expiração
+      // 3. Verifica Expiração
       if (agora > exp) {
-        console.error(`Licença expirou em: ${licenca.exp}`);
+        console.error(`Licença expirou em: ${data.exp}`);
         sistemaAtivado = false;
         motivoBloqueio = 'expired';
         return false;
       }
 
-      // 3. ANTI-FRAUDE: Relógio Retrocedido (comparando com last_seen da licença)
-      if (lastSeen && agora < lastSeen) {
+      // 4. ANTI-FRAUDE: Relógio Retrocedido (comparando com last_seen da licença)
+      if (agora < lastSeen) {
         console.error("🚨 DETECÇÃO DE FRAUDE: Relógio do computador retrocedido!");
         sistemaAtivado = false;
         motivoBloqueio = 'fraud';
         return false;
       }
 
-      // 4. ANTI-FRAUDE: Relógio Retrocedido (comparando com a maior data de romaneio salva no banco)
+      // 5. ANTI-FRAUDE: Relógio Retrocedido (comparando com a maior data de romaneio salva no banco)
       if (db) {
         try {
           const stmt = db.prepare("SELECT data FROM romaneios ORDER BY data DESC LIMIT 1");
@@ -123,8 +169,9 @@ async function verificarLicencaLocal() {
         }
       }
 
-      licenca.last_seen = agora.toISOString();
-      fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(licenca)));
+      // Atualiza last_seen localmente
+      licencaLocal.last_seen = agora.toISOString();
+      fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(licencaLocal)));
 
       sistemaAtivado = true;
       motivoBloqueio = 'ok';
@@ -676,13 +723,38 @@ function getHardwareId() {
   let systemUuid = '';
   
   if (process.platform === 'win32') {
+    // 1. Tenta obter o MachineGuid diretamente do Registro do Windows (Mais rápido e confiável)
     try {
-      systemUuid = execSync('wmic csproduct get uuid', { stdio: ['ignore', 'pipe', 'ignore'] })
-        .toString()
-        .replace('UUID', '')
-        .trim();
+      const output = execSync('reg query "HKLM\\Software\\Microsoft\\Cryptography" /v MachineGuid', { stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+      const match = output.match(/MachineGuid\s+REG_SZ\s+([a-fA-F0-9-]+)/i);
+      if (match && match[1]) {
+        systemUuid = match[1].trim();
+      }
     } catch (e) {
-      console.warn('Erro ao obter UUID via wmic:', e.message);
+      console.warn('Erro ao obter UUID via Registro:', e.message);
+    }
+
+    // 2. Fallback: Tenta obter o UUID via PowerShell CIM (Moderno)
+    if (!systemUuid) {
+      try {
+        systemUuid = execSync('powershell -Command "(Get-CimInstance Win32_ComputerSystemProduct).UUID"', { stdio: ['ignore', 'pipe', 'ignore'] })
+          .toString()
+          .trim();
+      } catch (e) {
+        console.warn('Erro ao obter UUID via PowerShell CIM:', e.message);
+      }
+    }
+
+    // 3. Segundo Fallback: Tenta via wmic csproduct (Legado, pode estar ausente em Windows 11 moderno)
+    if (!systemUuid) {
+      try {
+        systemUuid = execSync('wmic csproduct get uuid', { stdio: ['ignore', 'pipe', 'ignore'] })
+          .toString()
+          .replace('UUID', '')
+          .trim();
+      } catch (e) {
+        console.warn('Erro ao obter UUID via wmic:', e.message);
+      }
     }
   }
 
@@ -875,9 +947,9 @@ ipcMain.handle('ativar-sistema', async (event, chaveDigitada) => {
       fs.mkdirSync(pastaLicenca, { recursive: true });
     }
 
+    // Grava o token original completo e a data last_seen para validação local completa posterior
     const novaLicenca = {
-      mid: idHardware,
-      exp: data.exp,
+      token: chaveDigitada,
       last_seen: agora.toISOString()
     };
 

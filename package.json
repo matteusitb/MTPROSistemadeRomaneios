@@ -12,10 +12,12 @@
     "electron:start": "cross-env NODE_ENV=development electron .",
     "electron:dev": "concurrently -k \"npm run dev\" \"wait-on http://localhost:5173 && npm run electron:start\"",
     "build:protect": "node protect.cjs",
-    "electron:build": "npm run build && npm run build:protect && electron-builder"
+    "electron:build": "npm run build && npm run build:protect && electron-builder",
+    "electron:release": "npm run build && npm run build:protect && electron-builder --publish always"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
+    "bytenode": "^1.6.0",
     "electron-updater": "^6.8.9",
     "framer-motion": "^12.40.0",
     "lucide-react": "^1.16.0",
@@ -36,7 +38,6 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "autoprefixer": "^10.5.0",
-    "bytenode": "^1.6.0",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "electron": "^41.7.0",
@@ -59,7 +60,8 @@
   },
   "build": {
     "appId": "com.romaneio.madeiraserrada",
-    "productName": "RomaneioMadeiraSerrada",
+    "productName": "MT PRO - Madeira Serrada",
+    "icon": "icon.ico",
     "directories": {
       "output": "dist-electron"
     },
@@ -69,7 +71,8 @@
       "repo": "MTPROSistemadeRomaneios"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "icon.ico"
     },
     "nsis": {
       "oneClick": false,

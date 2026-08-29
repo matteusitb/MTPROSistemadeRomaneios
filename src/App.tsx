@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Home from './screens/Home';
 import NovoRomaneio from './screens/NovoRomaneio';
@@ -39,7 +39,7 @@ function MainLayout() {
     if (path.startsWith('/editar/')) return 'Editar Romaneio';
     if (path.startsWith('/visualizar/')) return 'Visualizar Romaneio';
     if (path === '/configuracoes') return 'Configurações';
-    return 'MT Pro';
+    return 'MT PRO - Madeira Serrada';
   };
 
   return (
@@ -147,9 +147,9 @@ function App() {
   }
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <MainLayout />
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 
