@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Backup e Configurações
   backupDB: (destPath) => ipcRenderer.invoke('backup-db', destPath),
+  restoreDB: (filePath) => ipcRenderer.invoke('restore-db', filePath),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   openBackupFolder: (folderPath) => ipcRenderer.invoke('open-backup-folder', folderPath),
   getDbInfo: () => ipcRenderer.invoke('get-db-info'),
@@ -18,8 +19,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Reset do banco (preserva espécies)
   resetRomaneiosDB: () => ipcRenderer.invoke('reset-romaneios-db'),
 
-  // Hardware ID para licenciamento
+  // Hardware ID e Versão
   getHardwareId: () => ipcRenderer.invoke('get-hardware-id'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
   // Auto-Update
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),

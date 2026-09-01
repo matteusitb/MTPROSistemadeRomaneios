@@ -51,6 +51,15 @@ export interface ElectronAPI {
 
   // Backup
   backupDB: (destPath?: string) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>;
+  restoreDB: (filePath?: string) => Promise<{
+    success: boolean;
+    canceled?: boolean;
+    error?: string;
+    path?: string;
+    romaneiosCount?: number;
+    especiesCount?: number;
+    pacotesCount?: number;
+  }>;
   selectFolder: () => Promise<{ success: boolean; path?: string; canceled?: boolean }>;
   openBackupFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
 
@@ -64,8 +73,9 @@ export interface ElectronAPI {
   // Reset (preserva espécies)
   resetRomaneiosDB: () => Promise<{ success: boolean; error?: string }>;
 
-  // Hardware ID
+  // Hardware ID e Versão
   getHardwareId: () => Promise<string>;
+  getAppVersion: () => Promise<string>;
 
   // Auto-Update
   checkForUpdates: () => Promise<{ success: boolean; isDev?: boolean; error?: string }>;

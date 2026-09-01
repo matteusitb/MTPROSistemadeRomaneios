@@ -8,6 +8,7 @@ const { execSync } = require('child_process');
 const { autoUpdater } = require('electron-updater');
 
 let db;
+let SQLInstance = null;
 let mainWindow;
 
 // --- SEGURANÇA E ATIVAÇÃO ---
@@ -200,15 +201,56 @@ function protectedHandle(channel, callback) {
   });
 }
 
+function applyMigrations(targetDb) {
+  // Garantir a tabela de licença local para suporte a login offline
+  try {
+    targetDb.run(`
+      CREATE TABLE IF NOT EXISTS licenca_local (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        machine_id TEXT NOT NULL,
+        status_licenca TEXT NOT NULL,
+        data_validade TEXT,
+        senha_hash TEXT NOT NULL,
+        salt TEXT NOT NULL,
+        ultimo_login TEXT
+      );
+    `);
+  } catch (e) {
+    console.error('Erro ao criar tabela licenca_local:', e.message);
+  }
+
+  // Executar migrações seguras no banco já existente
+  try {
+    targetDb.run(`ALTER TABLE especies ADD COLUMN cientifico TEXT`);
+  } catch (e) {
+    // Coluna já existe, ignora
+  }
+
+  try {
+    targetDb.run(`ALTER TABLE romaneio_pacotes ADD COLUMN especie_id INTEGER`);
+  } catch (e) {
+    // Coluna já existe, ignora
+  }
+
+  try {
+    targetDb.run(`ALTER TABLE romaneios ADD COLUMN tipo_romaneio TEXT DEFAULT 'padrao'`);
+  } catch (e) {
+    // Coluna já existe, ignora
+  }
+}
+
 async function initDB() {
-  const SQL = await initSqlJs();
+  if (!SQLInstance) {
+    SQLInstance = await initSqlJs();
+  }
   const dbPath = path.join(app.getPath('userData'), 'romaneios.sqlite');
   
   if (fs.existsSync(dbPath)) {
     const filebuffer = fs.readFileSync(dbPath);
-    db = new SQL.Database(filebuffer);
+    db = new SQLInstance.Database(filebuffer);
   } else {
-    db = new SQL.Database();
+    db = new SQLInstance.Database();
     // Initialize schema
     db.run(`
       CREATE TABLE IF NOT EXISTS clientes (
@@ -250,42 +292,7 @@ async function initDB() {
     `);
   }
 
-  // Garantir a tabela de licença local para suporte a login offline
-  try {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS licenca_local (
-        id TEXT PRIMARY KEY,
-        email TEXT NOT NULL,
-        machine_id TEXT NOT NULL,
-        status_licenca TEXT NOT NULL,
-        data_validade TEXT,
-        senha_hash TEXT NOT NULL,
-        salt TEXT NOT NULL,
-        ultimo_login TEXT
-      );
-    `);
-  } catch (e) {
-    console.error('Erro ao criar tabela licenca_local:', e.message);
-  }
-
-  // Executar migrações seguras no banco já existente
-  try {
-    db.run(`ALTER TABLE especies ADD COLUMN cientifico TEXT`);
-  } catch (e) {
-    // Coluna já existe, ignora
-  }
-
-  try {
-    db.run(`ALTER TABLE romaneio_pacotes ADD COLUMN especie_id INTEGER`);
-  } catch (e) {
-    // Coluna já existe, ignora
-  }
-
-  try {
-    db.run(`ALTER TABLE romaneios ADD COLUMN tipo_romaneio TEXT DEFAULT 'padrao'`);
-  } catch (e) {
-    // Coluna já existe, ignora
-  }
+  applyMigrations(db);
 
   // Verificar se a tabela especies precisa ser populada com o dump oficial
   try {
@@ -639,6 +646,106 @@ protectedHandle('backup-db', async (event, destPath) => {
   }
 });
 
+// ─── IPC: RESTAURAR BACKUP ──────────────────────────────────────────────────
+
+protectedHandle('restore-db', async (event, customFilePath) => {
+  try {
+    let targetFile = customFilePath;
+    if (!targetFile) {
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        title: 'Selecionar Arquivo de Backup para Restaurar',
+        filters: [
+          { name: 'Banco de Dados SQLite', extensions: ['sqlite', 'db'] },
+          { name: 'Todos os Arquivos', extensions: ['*'] }
+        ],
+        properties: ['openFile']
+      });
+      if (canceled || !filePaths || filePaths.length === 0) {
+        return { success: false, canceled: true };
+      }
+      targetFile = filePaths[0];
+    }
+
+    if (!fs.existsSync(targetFile)) {
+      return { success: false, error: 'Arquivo de backup não encontrado no caminho especificado.' };
+    }
+
+    const fileBuffer = fs.readFileSync(targetFile);
+
+    if (!SQLInstance) {
+      SQLInstance = await initSqlJs();
+    }
+
+    let testDb;
+    try {
+      testDb = new SQLInstance.Database(fileBuffer);
+    } catch (parseErr) {
+      return { success: false, error: 'O arquivo selecionado não é um banco de dados SQLite válido.' };
+    }
+
+    // Verificar se as tabelas principais existem
+    let tables = [];
+    try {
+      const tablesRes = testDb.exec("SELECT name FROM sqlite_master WHERE type='table'");
+      if (tablesRes.length > 0) {
+        tables = tablesRes[0].values.map(v => v[0]);
+      }
+    } catch (tblErr) {
+      return { success: false, error: 'Não foi possível ler a estrutura do banco de dados.' };
+    }
+
+    if (!tables.includes('romaneios')) {
+      return { success: false, error: 'O arquivo selecionado não possui a estrutura válida do sistema de romaneios.' };
+    }
+
+    // Criar backup de segurança preventivo do banco atual antes da substituição
+    try {
+      saveDB();
+      const currentDbPath = getDbFilePath();
+      if (fs.existsSync(currentDbPath)) {
+        const now = new Date();
+        const ts = now.toISOString().replace(/[:.]/g, '-');
+        const safetyBackupPath = path.join(app.getPath('userData'), `romaneios_seguranca_pre_restore_${ts}.sqlite`);
+        fs.copyFileSync(currentDbPath, safetyBackupPath);
+        console.log(`[Backup Segurança] Criado em: ${safetyBackupPath}`);
+      }
+    } catch (safetyErr) {
+      console.warn('Aviso: Falha ao criar backup preventivo de segurança:', safetyErr.message);
+    }
+
+    // Aplicar migrações ao banco restaurado
+    applyMigrations(testDb);
+
+    // Substituir a instância ativa
+    db = testDb;
+
+    // Salvar o novo banco no caminho do app
+    saveDB();
+
+    // Obter estatísticas do banco restaurado
+    let romaneiosCount = 0;
+    let especiesCount = 0;
+    let pacotesCount = 0;
+    try {
+      romaneiosCount = db.exec('SELECT COUNT(*) FROM romaneios')[0]?.values[0][0] || 0;
+      especiesCount = db.exec('SELECT COUNT(*) FROM especies')[0]?.values[0][0] || 0;
+      pacotesCount = db.exec('SELECT COUNT(*) FROM romaneio_pacotes')[0]?.values[0][0] || 0;
+    } catch (cntErr) {
+      console.warn('Erro ao obter contagens após restauração:', cntErr.message);
+    }
+
+    return {
+      success: true,
+      path: targetFile,
+      romaneiosCount,
+      especiesCount,
+      pacotesCount
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // ─── IPC: SELECIONAR PASTA ──────────────────────────────────────────────────
 
 protectedHandle('select-folder', async () => {
@@ -790,6 +897,10 @@ ipcMain.handle('get-hardware-id', () => {
   } catch (error) {
     return crypto.createHash('sha256').update(os.hostname() || 'fallback').digest('hex');
   }
+});
+
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
 });
 
 // ─── AUTO UPDATER CONFIG & LISTENERS ─────────────────────────────────────────

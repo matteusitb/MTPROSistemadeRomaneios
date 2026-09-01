@@ -3,7 +3,7 @@ import {
   Database, HardDriveDownload, FolderOpen, Clock, Shield,
   ToggleLeft, ToggleRight, Save, Trash2, AlertTriangle,
   CheckCircle2, XCircle, Copy, Check, X, RefreshCw,
-  Plus, Search, Pencil, ArrowUpCircle, Download
+  Plus, Search, Pencil, ArrowUpCircle, Download, RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Swal from 'sweetalert2';
@@ -44,6 +44,7 @@ export default function Configuracoes() {
   const [backupConfig, setBackupConfig] = useState<BackupConfig>({});
   const [loadingInfo, setLoadingInfo] = useState(true);
   const [backupLoading, setBackupLoading] = useState(false);
+  const [restoringBackup, setRestoringBackup] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [copiedPath, setCopiedPath] = useState(false);
 
@@ -68,9 +69,16 @@ export default function Configuracoes() {
   const [downloadProgress, setDownloadProgress] = useState<{ percent: number; bytesPerSecond: number; transferred: number; total: number } | null>(null);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
   const [checkingError, setCheckingError] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState('1.0.1');
 
   useEffect(() => {
     carregarDados();
+
+    if (window.electronAPI && typeof window.electronAPI.getAppVersion === 'function') {
+      window.electronAPI.getAppVersion().then(v => {
+        if (v) setAppVersion(v);
+      }).catch(() => {});
+    }
 
     // Configura os listeners de atualização do Electron
     const unsubscribeChecking = window.electronAPI.onUpdateChecking(() => {
@@ -197,6 +205,94 @@ export default function Configuracoes() {
       Swal.fire({ icon: 'error', title: 'Erro', text: 'Falha de comunicação.', customClass: { popup: 'rounded-3xl' } });
     } finally {
       setBackupLoading(false);
+    }
+  };
+
+  const handleRestaurarBackup = async () => {
+    const confirmation = await Swal.fire({
+      title: 'Restaurar Backup do Banco?',
+      html: `
+        <div style="text-align: left; font-size: 0.875rem; color: #475569; display: flex; flex-direction: column; gap: 12px; padding: 4px 12px;">
+          <p>Esta ação irá <strong>substituir todos os dados atuais</strong> pelos dados contidos no arquivo de backup selecionado.</p>
+          <div style="padding: 12px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; font-size: 0.75rem; color: #065f46;">
+            <strong>🛡️ Segurança:</strong> Um backup automático do estado atual será criado preventivamente antes da restauração.
+          </div>
+          <p style="font-size: 0.8rem; color: #64748b;">Deseja selecionar o arquivo de backup (.sqlite ou .db) agora?</p>
+        </div>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Selecionar Arquivo e Restaurar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#059669',
+      cancelButtonColor: '#94a3b8',
+      customClass: {
+        popup: 'rounded-3xl p-6 font-sans border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950',
+        title: 'text-xl font-black text-slate-800 dark:text-white tracking-tight',
+        confirmButton: 'rounded-xl font-bold px-5 py-2.5 shadow-sm text-sm cursor-pointer',
+        cancelButton: 'rounded-xl font-bold px-5 py-2.5 text-sm cursor-pointer'
+      }
+    });
+
+    if (!confirmation.isConfirmed) return;
+
+    setRestoringBackup(true);
+    try {
+      const result = await window.electronAPI.restoreDB();
+      if (result.success) {
+        const nomeArquivo = result.path ? result.path.split(/[\\/]/).pop() : 'backup.sqlite';
+        await Swal.fire({
+          icon: 'success',
+          title: 'Backup Restaurado com Sucesso!',
+          html: `
+            <div style="text-align: left; font-size: 0.875rem; color: #475569; display: flex; flex-direction: column; gap: 12px; padding: 4px 12px;">
+              <p>O banco de dados foi atualizado com as informações do backup.</p>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                  <span style="color: #64748b;">Arquivo importado:</span>
+                  <span style="font-family: monospace; font-weight: 700; color: #1e293b; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${nomeArquivo}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                  <span style="color: #64748b;">Romaneios restaurados:</span>
+                  <span style="font-weight: 800; color: #2563eb;">${result.romaneiosCount ?? 0}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                  <span style="color: #64748b;">Pacotes restaurados:</span>
+                  <span style="font-weight: 800; color: #7c3aed;">${result.pacotesCount ?? 0}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                  <span style="color: #64748b;">Espécies de madeira:</span>
+                  <span style="font-weight: 800; color: #059669;">${result.especiesCount ?? 0}</span>
+                </div>
+              </div>
+            </div>
+          `,
+          confirmButtonColor: '#059669',
+          customClass: {
+            popup: 'rounded-3xl p-6 font-sans border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950',
+            title: 'text-xl font-black text-slate-800 dark:text-white tracking-tight',
+            confirmButton: 'rounded-xl font-bold px-6 py-3 shadow-md text-sm cursor-pointer'
+          }
+        });
+        carregarDados();
+      } else if (!result.canceled) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Erro na Restauração',
+          text: result.error || 'Não foi possível restaurar o backup selecionado.',
+          confirmButtonColor: '#ef4444',
+          customClass: { popup: 'rounded-3xl' }
+        });
+      }
+    } catch (e: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Erro',
+        text: e?.message || 'Falha de comunicação ao restaurar o banco.',
+        customClass: { popup: 'rounded-3xl' }
+      });
+    } finally {
+      setRestoringBackup(false);
     }
   };
 
@@ -512,6 +608,41 @@ export default function Configuracoes() {
             </button>
           </motion.div>
 
+          {/* ── RESTAURAR BACKUP ── */}
+          <motion.div variants={itemVariants} className="glass-card p-8 flex flex-col gap-6">
+            <div className="flex items-center gap-4">
+              <div className="bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 p-3.5 rounded-2xl">
+                <RotateCcw size={26} strokeWidth={2} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Restaurar Backup</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">Importe um banco salvo anteriormente</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-950 rounded-2xl p-5 space-y-3 border border-slate-100 dark:border-slate-800 flex-1 flex flex-col justify-center">
+              <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
+                Carregue um arquivo <code className="bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded text-xs font-mono font-bold text-slate-700 dark:text-slate-300">.sqlite</code> ou <code className="bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded text-xs font-mono font-bold text-slate-700 dark:text-slate-300">.db</code> para restabelecer os romaneios e cadastros.
+              </p>
+              <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-900/30 rounded-xl p-2.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold">
+                <CheckCircle2 size={15} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>Backup preventivo automático antes de aplicar.</span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleRestaurarBackup}
+              disabled={restoringBackup}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-4 rounded-2xl font-bold shadow-xl shadow-indigo-600/20 transition-all flex items-center justify-center gap-3 hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 cursor-pointer"
+            >
+              {restoringBackup ? (
+                <><RefreshCw size={20} className="animate-spin" /> Restaurando...</>
+              ) : (
+                <><RotateCcw size={20} strokeWidth={2.5} /> Restaurar Backup Agora</>
+              )}
+            </button>
+          </motion.div>
+
           {/* ── BACKUP AUTOMÁTICO ── */}
           <motion.div variants={itemVariants} className="glass-card p-8 flex flex-col gap-6">
             <div className="flex items-center justify-between gap-4">
@@ -740,7 +871,7 @@ export default function Configuracoes() {
               </div>
               <div>
                 <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Atualizações do Sistema</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">Versão instalada: v1.0.0</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">Versão instalada: v{appVersion}</p>
               </div>
             </div>
 
