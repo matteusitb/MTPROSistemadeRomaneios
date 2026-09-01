@@ -436,6 +436,14 @@ function createWindow() {
     },
   });
 
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https:') || url.startsWith('http:') || url.startsWith('whatsapp:')) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
   const isDev = !app.isPackaged;
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
@@ -880,6 +888,52 @@ protectedHandle('reset-romaneios-db', () => {
     } catch (e) { /* tabela pode não existir */ }
     saveDB();
     return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// ─── IPC: COMPARTILHAMENTO & ARQUIVOS (WHATSAPP) ───────────────────────────
+
+protectedHandle('save-temp-pdf', async (event, fileName, base64Data) => {
+  try {
+    const sanitizedFileName = (fileName || 'Romaneio.pdf').replace(/[\\/:*?"<>|]/g, '_');
+    let targetDir = path.join(app.getPath('downloads'), 'Romaneios');
+    if (!fs.existsSync(targetDir)) {
+      try {
+        fs.mkdirSync(targetDir, { recursive: true });
+      } catch (e) {
+        targetDir = app.getPath('temp');
+      }
+    }
+    const filePath = path.join(targetDir, sanitizedFileName);
+    const buffer = Buffer.from(base64Data, 'base64');
+    fs.writeFileSync(filePath, buffer);
+    return { success: true, filePath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+protectedHandle('show-item-in-folder', async (event, filePath) => {
+  try {
+    if (filePath && fs.existsSync(filePath)) {
+      shell.showItemInFolder(filePath);
+      return { success: true };
+    }
+    return { success: false, error: 'Arquivo não encontrado' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+protectedHandle('open-external-url', async (event, url) => {
+  try {
+    if (url && (url.startsWith('https://') || url.startsWith('http://') || url.startsWith('whatsapp://'))) {
+      await shell.openExternal(url);
+      return { success: true };
+    }
+    return { success: false, error: 'URL inválida' };
   } catch (error) {
     return { success: false, error: error.message };
   }

@@ -100,6 +100,11 @@ export interface ElectronAPI {
   // Ativação e Anti-Clonagem
   checkActivationStatus: () => Promise<{ ativado: boolean; motivo: 'unactivated' | 'expired' | 'fraud' | 'ok' }>;
   ativarSistema: (chave: string) => Promise<{ success: boolean; validade?: string; error?: string }>;
+
+  // Compartilhamento & Arquivos (WhatsApp)
+  saveTempPdf: (fileName: string, base64Data: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
+  showItemInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+  openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 declare global {

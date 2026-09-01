@@ -64,6 +64,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Ativação e Anti-Clonagem
   checkActivationStatus: () => ipcRenderer.invoke('check-activation-status'),
-  ativarSistema: (chave) => ipcRenderer.invoke('ativar-sistema', chave)
+  ativarSistema: (chave) => ipcRenderer.invoke('ativar-sistema', chave),
+
+  // Compartilhamento & Arquivos (WhatsApp)
+  saveTempPdf: (fileName, base64Data) => ipcRenderer.invoke('save-temp-pdf', fileName, base64Data),
+  showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
+  openExternalUrl: (url) => ipcRenderer.invoke('open-external-url', url)
 });
 

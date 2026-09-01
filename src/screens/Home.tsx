@@ -5,6 +5,7 @@ import Swal from 'sweetalert2';
 import { gerarPdfRomaneio } from '../utils/pdfGenerator';
 import { useRomaneioStore } from '../store/useRomaneioStore';
 import { motion } from 'framer-motion';
+import { ModalWhatsApp, WhatsAppIcon } from '../components/ModalWhatsApp';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -17,6 +18,11 @@ export default function Home() {
   const [busca, setBusca] = useState('');
   const [filtroEspecie, setFiltroEspecie] = useState('');
   const [filtroData, setFiltroData] = useState('todos');
+
+  // Estados do Modal do WhatsApp
+  const [whatsappModalAberto, setWhatsappModalAberto] = useState(false);
+  const [romaneioSelecionadoWhatsApp, setRomaneioSelecionadoWhatsApp] = useState<any | null>(null);
+  const [pacotesSelecionadosWhatsApp, setPacotesSelecionadosWhatsApp] = useState<any[]>([]);
 
   useEffect(() => {
     carregarRomaneios();
@@ -194,6 +200,50 @@ export default function Home() {
         icon: 'error',
         title: 'Erro',
         text: 'Não foi possível gerar o PDF.',
+        confirmButtonColor: '#ef4444',
+        customClass: { popup: 'rounded-3xl' }
+      });
+    }
+  };
+
+  const handleCompartilharWhatsApp = async (romaneio: any) => {
+    try {
+      Swal.fire({
+        title: 'Carregando Romaneio...',
+        allowOutsideClick: false,
+        didOpen: () => { Swal.showLoading(); }
+      });
+
+      const pResult = await window.electronAPI.queryDB(`
+        SELECT rp.*, COALESCE(e.nome, e_glob.nome) as especie
+        FROM romaneio_pacotes rp
+        LEFT JOIN especies e ON rp.especie_id = e.id
+        LEFT JOIN romaneios r ON rp.romaneio_id = r.id
+        LEFT JOIN especies e_glob ON r.especie_id = e_glob.id
+        WHERE rp.romaneio_id = ?
+        ORDER BY rp.numero_pacote
+      `, [romaneio.id]);
+
+      if (!pResult.success) throw new Error('Erro ao buscar pacotes');
+      const pacotes = pResult.data || [];
+
+      for (const pacote of pacotes) {
+        const iResult = await window.electronAPI.queryDB('SELECT * FROM romaneio_itens WHERE pacote_id = ?', [pacote.id]);
+        if (!iResult.success) throw new Error('Erro ao buscar itens');
+        pacote.itens = iResult.data || [];
+      }
+
+      Swal.close();
+
+      setRomaneioSelecionadoWhatsApp(romaneio);
+      setPacotesSelecionadosWhatsApp(pacotes);
+      setWhatsappModalAberto(true);
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Erro',
+        text: 'Não foi possível carregar os dados para o WhatsApp.',
         confirmButtonColor: '#ef4444',
         customClass: { popup: 'rounded-3xl' }
       });
@@ -514,6 +564,13 @@ export default function Home() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
+                    <button 
+                      onClick={() => handleCompartilharWhatsApp(romaneio)} 
+                      className="bg-slate-50 dark:bg-slate-950 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-slate-500 hover:text-[#25D366] dark:hover:text-[#25D366] p-3 rounded-xl transition-all duration-200" 
+                      title="Compartilhar no WhatsApp Web"
+                    >
+                      <WhatsAppIcon size={18} />
+                    </button>
                     <button onClick={() => handleImprimirPdf(romaneio)} className="bg-slate-50 dark:bg-slate-950 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 p-3 rounded-xl transition-all duration-200" title="PDF">
                       <FileText size={18} strokeWidth={2.5} />
                     </button>
@@ -536,6 +593,19 @@ export default function Home() {
           </motion.div>
         )}
       </motion.div>
+
+      {/* Modal de Compartilhamento WhatsApp */}
+      {romaneioSelecionadoWhatsApp && (
+        <ModalWhatsApp
+          isOpen={whatsappModalAberto}
+          onClose={() => {
+            setWhatsappModalAberto(false);
+            setRomaneioSelecionadoWhatsApp(null);
+          }}
+          romaneio={romaneioSelecionadoWhatsApp}
+          pacotes={pacotesSelecionadosWhatsApp}
+        />
+      )}
     </div>
   );
 }

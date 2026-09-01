@@ -4,6 +4,7 @@ import { PackageSearch, ArrowLeft, Loader2, Calendar, User, Box, Pencil, FileDow
 import Swal from 'sweetalert2';
 import { gerarPdfRomaneio } from '../utils/pdfGenerator';
 import { motion } from 'framer-motion';
+import { ModalWhatsApp, WhatsAppIcon } from '../components/ModalWhatsApp';
 
 const processarItensPacote = (itens: any[], tipoRomaneio?: string) => {
   const normais: any[] = [];
@@ -137,6 +138,7 @@ export default function VisualizarRomaneio() {
   const [pacotes, setPacotes] = useState<any[]>([]);
   const [abaAtiva, setAbaAtiva] = useState('resumo');
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [whatsappModalAberto, setWhatsappModalAberto] = useState(false);
 
   const gerarPDF = async () => {
     try {
@@ -609,6 +611,13 @@ export default function VisualizarRomaneio() {
               <FileDown size={18} strokeWidth={2.5} />
               {gerandoPdf ? 'Gerando...' : 'Exportar PDF'}
             </button>
+            <button 
+              onClick={() => setWhatsappModalAberto(true)}
+              className="px-6 py-3.5 rounded-2xl font-black bg-[#25D366] hover:bg-[#20bd5a] text-white transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(37,211,102,0.3)] hover:shadow-[0_0_25px_rgba(37,211,102,0.5)] hover:-translate-y-1 cursor-pointer"
+            >
+              <WhatsAppIcon size={18} />
+              WhatsApp
+            </button>
           </div>
           
           <div className="flex gap-8 items-center ml-auto">
@@ -623,6 +632,16 @@ export default function VisualizarRomaneio() {
           </div>
         </div>
       </div>
+
+      {/* Modal de Compartilhamento via WhatsApp */}
+      {romaneio && (
+        <ModalWhatsApp
+          isOpen={whatsappModalAberto}
+          onClose={() => setWhatsappModalAberto(false)}
+          romaneio={romaneio}
+          pacotes={pacotes}
+        />
+      )}
     </>
   );
 }
