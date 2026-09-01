@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getBackupConfig: () => ipcRenderer.invoke('get-backup-config'),
   setBackupConfig: (config) => ipcRenderer.invoke('set-backup-config', config),
 
+  // Espécies e Sincronização
+  syncEspecies: (remoteEspecies) => ipcRenderer.invoke('sync-especies', remoteEspecies),
+
   // Reset do banco (preserva espécies)
   resetRomaneiosDB: () => ipcRenderer.invoke('reset-romaneios-db'),
 

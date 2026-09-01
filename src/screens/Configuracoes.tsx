@@ -3,10 +3,11 @@ import {
   Database, HardDriveDownload, FolderOpen, Clock, Shield,
   ToggleLeft, ToggleRight, Save, Trash2, AlertTriangle,
   CheckCircle2, XCircle, Copy, Check, X, RefreshCw,
-  Plus, Search, Pencil, ArrowUpCircle, Download, RotateCcw
+  Search, ArrowUpCircle, Download, RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Swal from 'sweetalert2';
+import { supabase } from '../utils/supabaseClient';
 
 interface DbInfo {
   path: string;
@@ -45,6 +46,7 @@ export default function Configuracoes() {
   const [loadingInfo, setLoadingInfo] = useState(true);
   const [backupLoading, setBackupLoading] = useState(false);
   const [restoringBackup, setRestoringBackup] = useState(false);
+  const [syncingEspecies, setSyncingEspecies] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [copiedPath, setCopiedPath] = useState(false);
 
@@ -372,146 +374,78 @@ export default function Configuracoes() {
     }
   };
 
-  const handleAdicionarEspecie = async () => {
-    const { value: formValues } = await Swal.fire({
-      title: 'Adicionar Nova Espécie',
-      html: `
-        <div style="display: flex; flex-direction: column; gap: 12px; padding: 10px 20px;">
-          <input id="swal-esp-nome" class="glass-input w-full px-4 py-3 text-sm font-semibold" placeholder="Nome Comercial (ex: Ipê)">
-          <input id="swal-esp-cientifico" class="glass-input w-full px-4 py-3 text-sm font-semibold" placeholder="Nome Científico (ex: Handroanthus)">
-        </div>
-      `,
-      focusConfirm: false,
-      showCancelButton: true,
-      confirmButtonText: 'Adicionar',
-      cancelButtonText: 'Cancelar',
-      confirmButtonColor: '#059669',
-      cancelButtonColor: '#94a3b8',
-      customClass: {
-        popup: 'rounded-3xl p-6 font-sans border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950',
-        title: 'text-xl font-black text-slate-800 dark:text-white tracking-tight',
-        confirmButton: 'rounded-xl font-bold px-5 py-2.5 shadow-sm text-sm cursor-pointer',
-        cancelButton: 'rounded-xl font-bold px-5 py-2.5 text-sm cursor-pointer'
-      },
-      preConfirm: () => {
-        const nome = (document.getElementById('swal-esp-nome') as HTMLInputElement).value.trim();
-        const cientifico = (document.getElementById('swal-esp-cientifico') as HTMLInputElement).value.trim();
-        if (!nome) {
-          Swal.showValidationMessage('O nome comercial é obrigatório!');
-          return false;
-        }
-        return { nome, cientifico };
-      }
-    });
-
-    if (formValues) {
-      try {
-        const res = await window.electronAPI.executeDB(
-          'INSERT INTO especies (nome, cientifico) VALUES (?, ?)',
-          [formValues.nome, formValues.cientifico || null]
-        );
-        if (res.success) {
-          Swal.fire({ icon: 'success', title: 'Adicionada!', text: `A espécie "${formValues.nome}" foi cadastrada com sucesso.`, timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-3xl' } });
-          carregarDados();
-        } else {
-          Swal.fire({ icon: 'error', title: 'Erro', text: res.error || 'Erro ao adicionar espécie.', customClass: { popup: 'rounded-3xl' } });
-        }
-      } catch {
-        Swal.fire({ icon: 'error', title: 'Erro', text: 'Falha de comunicação.', customClass: { popup: 'rounded-3xl' } });
-      }
-    }
-  };
-
-  const handleEditarEspecie = async (esp: any) => {
-    const { value: formValues } = await Swal.fire({
-      title: 'Editar Espécie',
-      html: `
-        <div style="display: flex; flex-direction: column; gap: 12px; padding: 10px 20px;">
-          <input id="swal-esp-nome" class="glass-input w-full px-4 py-3 text-sm font-semibold" placeholder="Nome Comercial" value="${esp.nome}">
-          <input id="swal-esp-cientifico" class="glass-input w-full px-4 py-3 text-sm font-semibold" placeholder="Nome Científico" value="${esp.cientifico || ''}">
-        </div>
-      `,
-      focusConfirm: false,
-      showCancelButton: true,
-      confirmButtonText: 'Salvar',
-      cancelButtonText: 'Cancelar',
-      confirmButtonColor: '#059669',
-      cancelButtonColor: '#94a3b8',
-      customClass: {
-        popup: 'rounded-3xl p-6 font-sans border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950',
-        title: 'text-xl font-black text-slate-800 dark:text-white tracking-tight',
-        confirmButton: 'rounded-xl font-bold px-5 py-2.5 shadow-sm text-sm cursor-pointer',
-        cancelButton: 'rounded-xl font-bold px-5 py-2.5 text-sm cursor-pointer'
-      },
-      preConfirm: () => {
-        const nome = (document.getElementById('swal-esp-nome') as HTMLInputElement).value.trim();
-        const cientifico = (document.getElementById('swal-esp-cientifico') as HTMLInputElement).value.trim();
-        if (!nome) {
-          Swal.showValidationMessage('O nome comercial é obrigatório!');
-          return false;
-        }
-        return { nome, cientifico };
-      }
-    });
-
-    if (formValues) {
-      try {
-        const res = await window.electronAPI.executeDB(
-          'UPDATE especies SET nome = ?, cientifico = ? WHERE id = ?',
-          [formValues.nome, formValues.cientifico || null, esp.id]
-        );
-        if (res.success) {
-          Swal.fire({ icon: 'success', title: 'Salvo!', text: 'Espécie atualizada com sucesso.', timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-3xl' } });
-          carregarDados();
-        } else {
-          Swal.fire({ icon: 'error', title: 'Erro', text: res.error || 'Erro ao atualizar espécie.', customClass: { popup: 'rounded-3xl' } });
-        }
-      } catch {
-        Swal.fire({ icon: 'error', title: 'Erro', text: 'Falha de comunicação.', customClass: { popup: 'rounded-3xl' } });
-      }
-    }
-  };
-
-  const handleExcluirEspecie = async (esp: any) => {
+  const handleSincronizarEspecies = async () => {
+    setSyncingEspecies(true);
     try {
-      const usageCheck = await window.electronAPI.queryDB('SELECT COUNT(*) as count FROM romaneio_pacotes WHERE especie_id = ?', [esp.id]);
-      const data = usageCheck.data as any[] | undefined;
-      const count = usageCheck.success && data && data.length > 0 ? Number(data[0].count) || 0 : 0;
-      
-      if (count > 0) {
+      const { data, error } = await supabase
+        .from('especies')
+        .select('id, nome, cientifico')
+        .order('nome');
+
+      if (error) {
+        throw new Error(error.message || 'Falha ao buscar espécies no Supabase.');
+      }
+
+      if (!data || data.length === 0) {
         Swal.fire({
-          icon: 'warning',
-          title: 'Espécie em uso',
-          text: `Esta espécie está associada a ${count} pacote(s) cadastrado(s) e não pode ser excluída.`,
-          confirmButtonColor: '#ef4444',
-          customClass: { popup: 'rounded-3xl', confirmButton: 'rounded-xl font-bold px-6 py-3 shadow-md' }
+          icon: 'info',
+          title: 'Nenhuma espécie remota',
+          text: 'A tabela de espécies no Supabase está vazia no momento.',
+          customClass: { popup: 'rounded-3xl' }
         });
         return;
       }
-      
-      const confirm = await Swal.fire({
-        title: 'Excluir Espécie?',
-        text: `Tem certeza que deseja excluir a espécie "${esp.nome}"?`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#94a3b8',
-        confirmButtonText: 'Sim, excluir!',
-        cancelButtonText: 'Cancelar',
-        customClass: { popup: 'rounded-3xl', confirmButton: 'rounded-xl font-bold px-5 py-2.5', cancelButton: 'rounded-xl font-bold px-5 py-2.5' }
-      });
 
-      if (confirm.isConfirmed) {
-        const res = await window.electronAPI.executeDB('DELETE FROM especies WHERE id = ?', [esp.id]);
-        if (res.success) {
-          Swal.fire({ icon: 'success', title: 'Excluída!', text: 'A espécie foi removida com sucesso.', timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-3xl' } });
-          carregarDados();
-        } else {
-          Swal.fire({ icon: 'error', title: 'Erro', text: res.error || 'Erro ao excluir espécie.', customClass: { popup: 'rounded-3xl' } });
-        }
+      const res = await window.electronAPI.syncEspecies(data);
+
+      if (res.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Espécies Sincronizadas!',
+          html: `
+            <div style="text-align: left; font-size: 0.875rem; color: #475569; display: flex; flex-direction: column; gap: 10px; padding: 4px 12px;">
+              <p>O catálogo local foi atualizado com sucesso a partir da nuvem.</p>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                  <span style="color: #64748b;">Novas espécies adicionadas:</span>
+                  <span style="font-weight: 800; color: #059669;">${res.inserted ?? 0}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                  <span style="color: #64748b;">Espécies atualizadas:</span>
+                  <span style="font-weight: 800; color: #2563eb;">${res.updated ?? 0}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                  <span style="color: #64748b;">Total no catálogo local:</span>
+                  <span style="font-weight: 800; color: #7c3aed;">${res.total ?? 0}</span>
+                </div>
+              </div>
+            </div>
+          `,
+          confirmButtonColor: '#059669',
+          customClass: {
+            popup: 'rounded-3xl p-6 font-sans border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950',
+            title: 'text-xl font-black text-slate-800 dark:text-white tracking-tight',
+            confirmButton: 'rounded-xl font-bold px-6 py-3 shadow-md text-sm cursor-pointer'
+          }
+        });
+        carregarDados();
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Erro na Sincronização Local',
+          text: res.error || 'Não foi possível salvar as espécies no banco local.',
+          customClass: { popup: 'rounded-3xl' }
+        });
       }
-    } catch {
-      Swal.fire({ icon: 'error', title: 'Erro', text: 'Falha de comunicação.', customClass: { popup: 'rounded-3xl' } });
+    } catch (err: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Erro de Conexão',
+        text: err.message || 'Verifique sua conexão com a internet para sincronizar com o Supabase.',
+        customClass: { popup: 'rounded-3xl' }
+      });
+    } finally {
+      setSyncingEspecies(false);
     }
   };
 
@@ -984,16 +918,25 @@ export default function Configuracoes() {
                   <Database size={26} strokeWidth={2} />
                 </div>
                 <div>
-                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Gerenciamento de Espécies</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">Cadastre, edite ou exclua espécies de madeira</p>
+                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Catálogo de Espécies de Madeira</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">Sincronizado com o Supabase (Gerenciado pelo Master)</p>
                 </div>
               </div>
               <button
-                onClick={handleAdicionarEspecie}
-                className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-6 py-3.5 rounded-2xl font-black text-sm transition-all flex items-center gap-2 shadow-md cursor-pointer self-start sm:self-auto"
+                onClick={handleSincronizarEspecies}
+                disabled={syncingEspecies}
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-6 py-3.5 rounded-2xl font-black text-sm transition-all flex items-center gap-2 shadow-md cursor-pointer self-start sm:self-auto disabled:opacity-60 disabled:cursor-not-allowed hover:-translate-y-0.5"
               >
-                <Plus size={18} strokeWidth={3} /> Adicionar Espécie
+                <RefreshCw size={18} className={syncingEspecies ? 'animate-spin' : ''} strokeWidth={2.5} />
+                {syncingEspecies ? 'Sincronizando...' : 'Sincronizar Espécies'}
               </button>
+            </div>
+
+            <div className="flex items-center gap-3 bg-emerald-50/80 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/40 rounded-2xl p-4 text-xs font-semibold text-emerald-800 dark:text-emerald-300 leading-relaxed">
+              <CheckCircle2 size={20} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <span>
+                <strong>Gestão Centralizada:</strong> O catálogo de espécies é administrado exclusivamente na nuvem pelo usuário Master. Clique em <strong>Sincronizar Espécies</strong> para carregar novos cadastros e atualizações para este computador.
+              </span>
             </div>
 
             <div className="relative">
@@ -1013,7 +956,7 @@ export default function Configuracoes() {
                   <tr>
                     <th className="px-5 py-4">Nome Comercial</th>
                     <th className="px-5 py-4">Nome Científico</th>
-                    <th className="px-5 py-4 text-center w-28">Ações</th>
+                    <th className="px-5 py-4 text-center w-36">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300 font-semibold">
@@ -1031,22 +974,9 @@ export default function Configuracoes() {
                           <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">{esp.nome}</td>
                           <td className="px-5 py-3.5 italic text-slate-500 dark:text-slate-400">{esp.cientifico || 'Não informado'}</td>
                           <td className="px-5 py-3.5 text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <button
-                                onClick={() => handleEditarEspecie(esp)}
-                                className="bg-slate-50 dark:bg-slate-950 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 p-2 rounded-lg transition-all border border-slate-150 dark:border-slate-800 cursor-pointer"
-                                title="Editar"
-                              >
-                                <Pencil size={14} />
-                              </button>
-                              <button
-                                onClick={() => handleExcluirEspecie(esp)}
-                                className="bg-slate-50 dark:bg-slate-950 hover:bg-red-50 dark:hover:bg-red-950/40 text-slate-400 hover:text-red-500 p-2 rounded-lg transition-all border border-slate-150 dark:border-slate-800 cursor-pointer"
-                                title="Excluir"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
+                            <span className="inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/40 px-3 py-1 rounded-full text-[10px] font-bold">
+                              <CheckCircle2 size={11} /> Sincronizada
+                            </span>
                           </td>
                         </tr>
                       ))

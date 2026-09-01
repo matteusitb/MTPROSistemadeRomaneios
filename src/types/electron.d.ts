@@ -70,6 +70,15 @@ export interface ElectronAPI {
   getBackupConfig: () => Promise<{ success: boolean; config?: BackupConfig; error?: string }>;
   setBackupConfig: (config: Partial<BackupConfig>) => Promise<{ success: boolean; error?: string }>;
 
+  // Espécies e Sincronização
+  syncEspecies: (remoteEspecies: Array<{ id?: number; nome: string; cientifico?: string | null }>) => Promise<{
+    success: boolean;
+    inserted?: number;
+    updated?: number;
+    total?: number;
+    error?: string;
+  }>;
+
   // Reset (preserva espécies)
   resetRomaneiosDB: () => Promise<{ success: boolean; error?: string }>;
 

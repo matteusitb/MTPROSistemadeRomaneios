@@ -746,6 +746,67 @@ protectedHandle('restore-db', async (event, customFilePath) => {
   }
 });
 
+// ─── IPC: SINCRONIZAR ESPÉCIES COM SUPABASE ─────────────────────────────────
+
+protectedHandle('sync-especies', (event, remoteEspecies) => {
+  try {
+    if (!Array.isArray(remoteEspecies)) {
+      return { success: false, error: 'Lista de espécies inválida.' };
+    }
+
+    let inserted = 0;
+    let updated = 0;
+
+    const selectStmt = db.prepare('SELECT id, nome, cientifico FROM especies WHERE LOWER(TRIM(nome)) = LOWER(TRIM(?))');
+    const updateStmt = db.prepare('UPDATE especies SET cientifico = ? WHERE id = ?');
+    const insertStmt = db.prepare('INSERT INTO especies (nome, cientifico) VALUES (?, ?)');
+
+    for (const item of remoteEspecies) {
+      if (!item || !item.nome) continue;
+      const cleanNome = item.nome.trim();
+      const cleanCientifico = item.cientifico ? item.cientifico.trim() : null;
+
+      selectStmt.bind([cleanNome]);
+      if (selectStmt.step()) {
+        const localRow = selectStmt.getAsObject();
+        selectStmt.reset();
+
+        // Atualiza o nome científico se houver alteração
+        if ((localRow.cientifico || null) !== cleanCientifico) {
+          updateStmt.bind([cleanCientifico, localRow.id]);
+          updateStmt.step();
+          updateStmt.reset();
+          updated++;
+        }
+      } else {
+        selectStmt.reset();
+        insertStmt.bind([cleanNome, cleanCientifico]);
+        insertStmt.step();
+        insertStmt.reset();
+        inserted++;
+      }
+    }
+
+    selectStmt.free();
+    updateStmt.free();
+    insertStmt.free();
+
+    saveDB();
+
+    const totalRes = db.exec('SELECT COUNT(*) FROM especies');
+    const totalCount = totalRes.length > 0 ? totalRes[0].values[0][0] : 0;
+
+    return {
+      success: true,
+      inserted,
+      updated,
+      total: totalCount
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // ─── IPC: SELECIONAR PASTA ──────────────────────────────────────────────────
 
 protectedHandle('select-folder', async () => {
