@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Phone, MessageSquare, CheckSquare, 
-  Square, FileText, Check, Copy, Box, FolderOpen
+  Square, FileText, Check, Copy, Box
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { 
@@ -275,9 +276,9 @@ export const ModalWhatsApp: React.FC<ModalWhatsAppProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+      <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
         {/* Backdrop com Blur */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -319,123 +320,86 @@ export const ModalWhatsApp: React.FC<ModalWhatsAppProps> = ({
             </button>
           </div>
 
-          {/* Body com Scroll */}
-          <div className="p-6 sm:p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1">
-            
-            {/* Grid de Inputs Principais */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              
-              {/* Campo Telefone */}
-              <div>
-                <label className="block text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <Phone size={14} className="text-emerald-500" /> WhatsApp do Destinatário
-                </label>
-                <div className="relative">
-                  <input
-                    type="tel"
-                    value={telefone}
-                    onChange={e => setTelefone(formatarMascaraTelefone(e.target.value))}
-                    placeholder="(99) 99999-9999 (Opcional)"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3.5 text-sm font-bold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
-                  />
-                  {telefone && (
-                    <button
-                      type="button"
-                      onClick={() => setTelefone('')}
-                      className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold"
-                    >
-                      Limpar
-                    </button>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5 font-medium">
-                  Se deixar vazio, você poderá escolher o contato no WhatsApp Web.
-                </p>
-              </div>
-
-              {/* Campo Mensagem Extra */}
-              <div>
-                <label className="block text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <MessageSquare size={14} className="text-blue-500" /> Observação / Recado Extra
-                </label>
+          {/* Conteúdo do Modal */}
+          <div className="p-6 sm:p-8 overflow-y-auto space-y-6 custom-scrollbar flex-1">
+            {/* Input de Telefone / Destinatário */}
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                <Phone size={14} className="text-emerald-500" /> WhatsApp do Destinatário:
+              </label>
+              <div className="relative">
                 <input
                   type="text"
-                  value={mensagemExtra}
-                  onChange={e => setMensagemExtra(e.target.value)}
-                  placeholder="Ex: Segue a carga do caminhão de hoje."
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3.5 text-sm font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                  placeholder="(00) 00000-0000"
+                  value={telefone}
+                  onChange={(e) => setTelefone(formatarMascaraTelefone(e.target.value))}
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3.5 text-sm font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all placeholder:text-slate-400 placeholder:font-normal"
                 />
-                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1.5 font-medium">
-                  Será inserida como destaque no resumo da mensagem.
-                </p>
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400 dark:text-slate-500">
+                  DDD + Número
+                </span>
               </div>
-
             </div>
 
-            {/* Seleção de Pacotes */}
-            <div className="space-y-3 bg-slate-50/70 dark:bg-slate-900/40 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* Seleção de Pacotes para Incluir no Texto */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <Box size={14} className="text-emerald-500" /> Pacotes para Incluir no Resumo:
+                </label>
                 <div className="flex items-center gap-2">
-                  <Box size={16} className="text-emerald-600 dark:text-emerald-400" />
-                  <span className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                    Pacotes Incluídos ({pacotesFiltrados.length} de {pacotes.length})
-                  </span>
-                </div>
-
-                <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={handleSelecionarTodos}
-                    className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                    className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
                   >
-                    Todos
+                    Marcar Todos
                   </button>
+                  <span className="text-slate-300 dark:text-slate-700">•</span>
                   <button
                     type="button"
                     onClick={handleDesmarcarTodos}
-                    className="text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                    className="text-[11px] font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:underline cursor-pointer"
                   >
-                    Nenhum
+                    Desmarcar
                   </button>
                 </div>
               </div>
 
-              {/* Lista dos Pacotes */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
-                {pacotes.map(pacote => {
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-40 overflow-y-auto p-2 border border-slate-100 dark:border-slate-800/80 rounded-2xl bg-slate-50/50 dark:bg-slate-900/30 custom-scrollbar">
+                {pacotes.map((pacote) => {
                   const isChecked = pacotesSelecionados.includes(String(pacote.id));
                   return (
-                    <label
+                    <div
                       key={pacote.id}
                       onClick={() => handleTogglePacote(String(pacote.id))}
-                      className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                      className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
                         isChecked
-                          ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40 text-emerald-950 dark:text-emerald-200'
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 opacity-60'
+                          ? 'bg-white dark:bg-slate-850 border-emerald-300/80 dark:border-emerald-600/50 shadow-xs'
+                          : 'bg-transparent border-transparent opacity-60 hover:opacity-100'
                       }`}
                     >
-                      <div className="shrink-0 text-emerald-600 dark:text-emerald-400">
-                        {isChecked ? <CheckSquare size={18} /> : <Square size={18} className="text-slate-400" />}
-                      </div>
-                      <div className="text-xs truncate flex-1">
-                        <span className="font-extrabold text-slate-900 dark:text-slate-100">
-                          Pacote #{pacote.numero_pacote}
-                        </span>{' '}
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                          ({pacote.especie || 'Mista'})
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {isChecked ? (
+                          <CheckSquare size={16} className="text-emerald-500 shrink-0" />
+                        ) : (
+                          <Square size={16} className="text-slate-400 shrink-0" />
+                        )}
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">
+                          Pacote {pacote.numero_pacote} {pacote.especie ? `• ${pacote.especie}` : ''}
                         </span>
                       </div>
-                      <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 shrink-0">
+                      <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-450 shrink-0 ml-2">
                         {Number(pacote.total_m3 || 0).toFixed(3)} m³
                       </span>
-                    </label>
+                    </div>
                   );
                 })}
               </div>
 
               {/* Badges de Totais dos Selecionados */}
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50 text-xs font-bold text-slate-600 dark:text-slate-400">
-                <span>Volume selecionado para o PDF:</span>
+              <div className="flex items-center justify-between pt-1 px-1 text-xs font-bold text-slate-500 dark:text-slate-400">
+                <span>Volume selecionado:</span>
                 <div className="flex gap-3">
                   <span className="text-slate-800 dark:text-slate-200">{totalMl.toFixed(2).replace('.', ',')} ML</span>
                   <span className="text-emerald-600 dark:text-emerald-400 font-black">{totalM3.toFixed(3).replace('.', ',')} M³</span>
@@ -443,67 +407,77 @@ export const ModalWhatsApp: React.FC<ModalWhatsAppProps> = ({
               </div>
             </div>
 
-            {/* Pré-visualização da Mensagem */}
+            {/* Mensagem Opcional Extra */}
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                <MessageSquare size={14} className="text-emerald-500" /> Observação ou Nota Extra (Opcional):
+              </label>
+              <textarea
+                rows={2}
+                placeholder="Ex: Segue romaneio para conferência da carga..."
+                value={mensagemExtra}
+                onChange={(e) => setMensagemExtra(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 text-xs font-medium text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all resize-none placeholder:text-slate-400"
+              />
+            </div>
+
+            {/* Preview da Mensagem */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <FileText size={14} className="text-emerald-500" /> Pré-visualização da Mensagem
-                </span>
+                <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <FileText size={14} className="text-emerald-500" /> Prévia da Mensagem:
+                </label>
                 <button
                   type="button"
                   onClick={handleCopiarMensagem}
-                  className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+                  className="flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer transition-colors"
                 >
-                  {copiado ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                  {copiado ? 'Copiado!' : 'Copiar Texto'}
+                  {copiado ? (
+                    <>
+                      <Check size={13} className="text-emerald-500" /> Copiado!
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={13} /> Copiar Texto
+                    </>
+                  )}
                 </button>
               </div>
-
-              {/* Bolha de Conversa estilo WhatsApp */}
-              <div className="bg-[#eef8f2] dark:bg-[#0b1b16] border border-emerald-200 dark:border-emerald-900/40 rounded-2xl p-4 font-mono text-xs text-slate-800 dark:text-emerald-100 whitespace-pre-wrap leading-relaxed shadow-inner max-h-48 overflow-y-auto custom-scrollbar">
+              <div className="p-4 bg-slate-900 text-slate-100 rounded-2xl font-mono text-[11px] leading-relaxed max-h-44 overflow-y-auto whitespace-pre-wrap border border-slate-800 custom-scrollbar selection:bg-emerald-500 selection:text-white">
                 {mensagemFormatada}
               </div>
             </div>
-
-            {/* Dica Informativa */}
-            <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/30 flex items-start gap-3 text-xs text-blue-900 dark:text-blue-200">
-              <FolderOpen size={18} className="shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
-              <div className="leading-relaxed">
-                <strong>Geração e Envio Automático:</strong> Ao clicar em compartilhar, o sistema salvará o PDF e abrirá a pasta com ele selecionado, permitindo que você apenas o arraste para o WhatsApp Web.
-              </div>
-            </div>
-
           </div>
 
           {/* Footer de Ações */}
-          <div className="px-6 sm:px-8 py-4 bg-slate-50 dark:bg-slate-900/70 border-t border-slate-100 dark:border-slate-850 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="px-6 sm:px-8 py-4 border-t border-slate-100 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-900/40 flex flex-wrap items-center justify-between gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="w-full sm:w-auto px-5 py-3 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              className="px-5 py-2.5 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-all cursor-pointer"
             >
-              Cancelar
+              Fechar
             </button>
 
             <button
               type="button"
-              disabled={enviando || pacotesFiltrados.length === 0}
               onClick={handleCompartilhar}
-              className={`w-full sm:w-auto px-8 py-3.5 rounded-2xl font-black text-sm flex items-center justify-center gap-2.5 shadow-lg transition-all cursor-pointer ${
-                enviando || pacotesFiltrados.length === 0
-                  ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed shadow-none'
-                  : 'bg-[#25D366] hover:bg-[#20bd5a] text-white shadow-[#25D366]/30 hover:shadow-[#25D366]/50 hover:-translate-y-0.5 active:translate-y-0'
+              disabled={enviando}
+              className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-xs text-white transition-all shadow-lg cursor-pointer ${
+                enviando
+                  ? 'bg-slate-700 cursor-not-allowed opacity-75'
+                  : 'bg-[#25D366] hover:bg-[#20bd5a] shadow-[#25D366]/25 hover:shadow-[#25D366]/40 hover:-translate-y-0.5'
               }`}
             >
               {enviando ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Preparando PDF e Chat...</span>
+                  <span>Processando...</span>
                 </>
               ) : (
                 <>
-                  <WhatsAppIcon size={18} />
-                  <span>Abrir no WhatsApp Web</span>
+                  <WhatsAppIcon size={16} />
+                  <span>Enviar no WhatsApp</span>
                 </>
               )}
             </button>
@@ -511,6 +485,7 @@ export const ModalWhatsApp: React.FC<ModalWhatsAppProps> = ({
 
         </motion.div>
       </div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 };

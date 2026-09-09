@@ -1,48 +1,11 @@
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
+import { processarItensPacote, calcularResumosConsolidados } from './cubagemEngine';
 
 // Configurar as fontes
 if (pdfMake && (pdfFonts as any)?.pdfMake?.vfs) {
   (pdfMake as any).vfs = (pdfFonts as any).pdfMake.vfs;
 }
-
-const processarItensPacote = (itens: any[], tipoRomaneio?: string) => {
-  const normais: any[] = [];
-  const gruposMap = new Map<string, any>();
-
-  (itens || []).forEach(item => {
-    if (Number(item.quantidade) > 1 || tipoRomaneio === 'padrao' || tipoRomaneio === 'pes') {
-      normais.push(item);
-      return;
-    }
-    
-    const key = `${item.espessura}_${item.comprimento}`;
-    if (!gruposMap.has(key)) {
-      gruposMap.set(key, {
-        id: key,
-        espessura: Number(item.espessura),
-        comprimento: Number(item.comprimento),
-        larguras: [] as number[],
-        quantidade: 0,
-        volume_ml: 0,
-        volume_m3: 0
-      });
-    }
-    
-    const grupo = gruposMap.get(key) as any;
-    grupo.larguras.push(Number(item.largura));
-    grupo.quantidade += 1;
-    
-    const cMetros = tipoRomaneio === 'pes' ? Number(item.comprimento) * 0.3048 : Number(item.comprimento);
-    grupo.volume_ml += cMetros;
-    grupo.volume_m3 += (Number(item.espessura) / 100) * (Number(item.largura) / 100) * cMetros;
-  });
-
-  const abertos = Array.from(gruposMap.values());
-  const maxLarguras = abertos.reduce((max, g: any) => Math.max(max, g.larguras.length), 0);
-
-  return { normais, abertos, maxLarguras };
-};
 
 export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
   const content: Record<string, unknown>[] = [];
@@ -56,120 +19,8 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
     ? Array.from(new Set(pacotes.map(p => p.especie).filter(Boolean))).join(', ')
     : (romaneio.especie || 'Sem espécie');
 
-  // Lógica de resumos consolidados por Espécie e por Bitola (Seção) para o PDF
-  const resumoEspecieMap: { [key: string]: { especie: string; totalMl: number; totalM3: number } } = {};
-  const resumoBitolaMap: { [key: string]: { especie: string; espessura: number; largura: number; totalMl: number; totalM3: number } } = {};
-  const resumoLarguraMap: { [key: string]: { especie: string; largura: number; totalMl: number; totalM3: number } } = {};
-  let totalMadeiraLongaM3 = 0;
-  let totalShortM3 = 0;
-  let totalAbaixo6M3 = 0;
-  let total7M3 = 0;
-  let totalAcima8M3 = 0;
-
-  pacotes.forEach(p => {
-    const especie: string = p.especie || romaneio.especie || 'Sem espécie';
-    
-    p.itens.forEach((i: any) => {
-      const e = Number(i.espessura) || 0;
-      const l = Number(i.largura) || 0;
-      const c = Number(i.comprimento) || 0;
-      const q = Number(i.quantidade) || 0;
-      
-      if (!e || !l || !c || !q) return;
-      
-      const cMetros = romaneio.tipo_romaneio === 'pes' ? c * 0.3048 : c;
-      const m3 = (e / 100) * (l / 100) * cMetros * q;
-      const ml = cMetros * q;
-
-      if (romaneio.tipo_romaneio === 'pes') {
-        if (c <= 6) {
-          totalAbaixo6M3 += m3;
-        } else if (c > 6 && c < 8) {
-          total7M3 += m3;
-        } else {
-          totalAcima8M3 += m3;
-        }
-      } else {
-        if (cMetros >= 2.00) {
-          totalMadeiraLongaM3 += m3;
-        } else {
-          totalShortM3 += m3;
-        }
-      }
-
-      // 1. Agrupamento por Espécie
-      if (!resumoEspecieMap[especie]) {
-        resumoEspecieMap[especie] = { especie, totalMl: 0, totalM3: 0 };
-      }
-      resumoEspecieMap[especie].totalMl += ml;
-      resumoEspecieMap[especie].totalM3 += m3;
-
-      // 2. Agrupamento por Bitola (Espécie + Espessura + Largura)
-      const bitolaKey = `${especie}_${e}_${l}`;
-      if (!resumoBitolaMap[bitolaKey]) {
-        resumoBitolaMap[bitolaKey] = {
-          especie,
-          espessura: e,
-          largura: l,
-          totalMl: 0,
-          totalM3: 0
-        };
-      }
-      resumoBitolaMap[bitolaKey].totalMl += ml;
-      resumoBitolaMap[bitolaKey].totalM3 += m3;
-
-      // 3. Agrupamento por Largura (Espécie + Largura)
-      if (romaneio.tipo_romaneio === 'pes') {
-        const larguraKey = `${especie}_${l}`;
-        if (!resumoLarguraMap[larguraKey]) {
-          resumoLarguraMap[larguraKey] = {
-            especie,
-            largura: l,
-            totalMl: 0,
-            totalM3: 0
-          };
-        }
-        resumoLarguraMap[larguraKey].totalMl += ml;
-        resumoLarguraMap[larguraKey].totalM3 += m3;
-      }
-    });
-  });
-
-  const totalVolumeGeral = Object.values(resumoEspecieMap).reduce((acc, curr) => acc + curr.totalM3, 0);
-
-  const resumos = {
-    porEspecie: Object.values(resumoEspecieMap)
-      .sort((a, b) => b.totalM3 - a.totalM3)
-      .map(x => ({
-        ...x,
-        percentual: totalVolumeGeral > 0 ? (x.totalM3 / totalVolumeGeral) * 100 : 0
-      })),
-    porBitola: Object.values(resumoBitolaMap)
-      .sort((a, b) => {
-        if (a.especie !== b.especie) return a.especie.localeCompare(b.especie);
-        if (a.espessura !== b.espessura) return b.espessura - a.espessura;
-        return b.largura - a.largura;
-      })
-      .map(x => ({
-        ...x,
-        percentual: totalVolumeGeral > 0 ? (x.totalM3 / totalVolumeGeral) * 100 : 0
-      })),
-    porLargura: Object.values(resumoLarguraMap)
-      .sort((a, b) => {
-        if (a.especie !== b.especie) return a.especie.localeCompare(b.especie);
-        return b.largura - a.largura;
-      })
-      .map(x => ({
-        ...x,
-        percentual: totalVolumeGeral > 0 ? (x.totalM3 / totalVolumeGeral) * 100 : 0
-      })),
-    totalMadeiraLongaM3,
-    totalShortM3,
-    totalAbaixo6M3,
-    total7M3,
-    totalAcima8M3,
-    totalVolumeGeral
-  };
+  // Lógica de resumos consolidados por Espécie e por Bitola (Seção) para o PDF usando o motor unificado
+  const resumos = calcularResumosConsolidados(pacotes, romaneio.tipo_romaneio);
 
   // Cabeçalho
   content.push({
@@ -273,8 +124,8 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
       const headers = [
         { text: 'Item', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Espessura (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: romaneio.tipo_romaneio === 'pes' ? 'Comprimento (pés)' : 'Comprimento (m)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Largura (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: romaneio.tipo_romaneio === 'pes' ? 'Comprimento (pés)' : 'Comprimento (m)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Qtd', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
@@ -290,8 +141,8 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
         const row: any[] = [
           { text: (idx + 1).toString(), alignment: 'center' },
           { text: item.espessura.toString().replace('.', ','), alignment: 'center' },
-          { text: romaneio.tipo_romaneio === 'pes' ? item.comprimento.toString().replace('.', ',') : item.comprimento.toFixed(2).replace('.', ','), alignment: 'center' },
           { text: item.largura.toString().replace('.', ','), alignment: 'center' },
+          { text: romaneio.tipo_romaneio === 'pes' ? item.comprimento.toString().replace('.', ',') : item.comprimento.toFixed(2).replace('.', ','), alignment: 'center' },
           { text: item.quantidade.toString(), alignment: 'center', bold: true },
           { text: ml.toFixed(2).replace('.', ','), alignment: 'center' },
           { text: m3.toFixed(3).replace('.', ','), alignment: 'center', color: '#047857' }
@@ -436,11 +287,11 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
     margin: [0, 0, 0, 20]
   });
 
-  const percentLonga = totalVolumeGeral > 0 ? (resumos.totalMadeiraLongaM3 / totalVolumeGeral) * 100 : 0;
-  const percentShort = totalVolumeGeral > 0 ? (resumos.totalShortM3 / totalVolumeGeral) * 100 : 0;
-  const percentAbaixo6 = totalVolumeGeral > 0 ? (resumos.totalAbaixo6M3 / totalVolumeGeral) * 100 : 0;
-  const percent7 = totalVolumeGeral > 0 ? (resumos.total7M3 / totalVolumeGeral) * 100 : 0;
-  const percentAcima8 = totalVolumeGeral > 0 ? (resumos.totalAcima8M3 / totalVolumeGeral) * 100 : 0;
+  const percentLonga = resumos.totalVolumeGeral > 0 ? (resumos.totalMadeiraLongaM3 / resumos.totalVolumeGeral) * 100 : 0;
+  const percentShort = resumos.totalVolumeGeral > 0 ? (resumos.totalShortM3 / resumos.totalVolumeGeral) * 100 : 0;
+  const percentAbaixo6 = resumos.totalVolumeGeral > 0 ? (resumos.totalAbaixo6M3 / resumos.totalVolumeGeral) * 100 : 0;
+  const percent7 = resumos.totalVolumeGeral > 0 ? (resumos.total7M3 / resumos.totalVolumeGeral) * 100 : 0;
+  const percentAcima8 = resumos.totalVolumeGeral > 0 ? (resumos.totalAcima8M3 / resumos.totalVolumeGeral) * 100 : 0;
 
   const bodyCategoria: Record<string, unknown>[][] = [
     [

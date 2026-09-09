@@ -341,7 +341,15 @@ function saveDB() {
   const data = db.export();
   const buffer = Buffer.from(data);
   const dbPath = path.join(app.getPath('userData'), 'romaneios.sqlite');
-  fs.writeFileSync(dbPath, buffer);
+  const tmpPath = path.join(app.getPath('userData'), 'romaneios.sqlite.tmp');
+  try {
+    fs.writeFileSync(tmpPath, buffer);
+    fs.renameSync(tmpPath, dbPath);
+  } catch (err) {
+    console.error('Erro na escrita atômica do banco de dados:', err.message);
+    // Fallback de contingência
+    fs.writeFileSync(dbPath, buffer);
+  }
 }
 
 function getDbFilePath() {
@@ -435,6 +443,8 @@ function createWindow() {
       contextIsolation: true,
     },
   });
+
+  mainWindow.maximize();
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https:') || url.startsWith('http:') || url.startsWith('whatsapp:')) {

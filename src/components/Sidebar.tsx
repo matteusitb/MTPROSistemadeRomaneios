@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useRomaneioStore } from '../store/useRomaneioStore';
 import { useAuthStore } from '../store/useAuthStore';
-import Swal from 'sweetalert2';
+import { ModalTipoRomaneio } from './ModalTipoRomaneio';
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -15,10 +15,11 @@ interface SidebarProps {
 
 export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
   const location = useLocation();
-  const { sidebarCollapsed, toggleSidebar, setTipoRomaneio, resetForm } = useRomaneioStore();
+  const { sidebarCollapsed, toggleSidebar, resetForm, setTipoRomaneio } = useRomaneioStore();
   const logout = useAuthStore((state) => state.logout);
   const isOfflineMode = useAuthStore((state) => state.isOfflineMode);
   const navigate = useNavigate();
+  const [modalTipoAberto, setModalTipoAberto] = useState(false);
 
   // Dark/Light Mode state
   const [isDark, setIsDark] = useState(() => {
@@ -51,49 +52,15 @@ export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
 
   const handleNovoRomaneioClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    Swal.fire({
-      title: 'Novo Romaneio',
-      icon: 'question',
-      html: `
-        <p class="text-sm text-slate-500 dark:text-slate-400 font-medium mb-6">Selecione o tipo de romaneio que deseja criar:</p>
-        <div class="flex flex-col gap-3">
-          <button id="btn-padrao" class="swal-btn-custom swal-btn-padrao">Padrão (Fixas)</button>
-          <button id="btn-aberta" class="swal-btn-custom swal-btn-aberta">Largura Aberta</button>
-          <button id="btn-pes" class="swal-btn-custom swal-btn-pes">Ipê (Comprimento em Pés)</button>
-        </div>
-      `,
-      showCancelButton: true,
-      showConfirmButton: false,
-      cancelButtonText: 'Cancelar',
-      customClass: {
-        popup: 'rounded-3xl shadow-2xl border border-slate-100 font-sans p-8',
-        title: 'text-2xl font-black text-slate-800 tracking-tight',
-        cancelButton: 'rounded-xl font-bold px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all w-full mt-3 shadow-sm border border-slate-200/50'
-      },
-      didOpen: () => {
-        const popup = Swal.getPopup();
-        if (popup) {
-          popup.querySelector('#btn-padrao')?.addEventListener('click', () => {
-            Swal.close();
-            resetForm();
-            setTipoRomaneio('padrao');
-            navigate('/novo');
-          });
-          popup.querySelector('#btn-aberta')?.addEventListener('click', () => {
-            Swal.close();
-            resetForm();
-            setTipoRomaneio('aberta');
-            navigate('/novo');
-          });
-          popup.querySelector('#btn-pes')?.addEventListener('click', () => {
-            Swal.close();
-            resetForm();
-            setTipoRomaneio('pes');
-            navigate('/novo');
-          });
-        }
-      }
-    });
+    setMobileOpen(false);
+    setModalTipoAberto(true);
+  };
+
+  const handleSelectTipo = (tipo: 'padrao' | 'aberta' | 'pes') => {
+    resetForm();
+    setTipoRomaneio(tipo);
+    setModalTipoAberto(false);
+    navigate('/novo');
   };
 
 
@@ -178,6 +145,13 @@ export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
             <span className="nav-text">Sair</span>
           </button>
         </div>
+
+        {/* Modal para seleção do tipo de romaneio */}
+        <ModalTipoRomaneio
+          isOpen={modalTipoAberto}
+          onClose={() => setModalTipoAberto(false)}
+          onSelect={handleSelectTipo}
+        />
       </nav>
   );
 }
