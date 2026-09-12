@@ -3,8 +3,8 @@ import { useRomaneioStore } from '../store/useRomaneioStore';
 import GridCubagem from '../components/GridCubagem';
 import { ModalTipoRomaneio } from '../components/ModalTipoRomaneio';
 import {
-  Plus, Save, Trash2, PackageSearch, BarChart3, ChevronDown, ChevronUp,
-  Copy, RotateCcw, AlertTriangle, Layers, Ruler, Sparkles
+  Plus, Save, Trash2, BarChart3, ChevronDown, ChevronUp,
+  Copy, RotateCcw, AlertTriangle, Sparkles
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
@@ -28,7 +28,7 @@ interface CardPacoteProps {
   onRemove: (id: string) => void;
 }
 
-const CardPacote = React.memo(({
+const CardPacoteComponent = ({
   pacoteId,
   numero,
   especie,
@@ -109,6 +109,17 @@ const CardPacote = React.memo(({
       <GridCubagem pacoteId={pacoteId} pacoteIndex={index} />
     </div>
   );
+};
+
+const CardPacote = React.memo(CardPacoteComponent, (prev, next) => {
+  return (
+    prev.pacoteId === next.pacoteId &&
+    prev.numero === next.numero &&
+    prev.especie === next.especie &&
+    prev.index === next.index &&
+    prev.totalPacotes === next.totalPacotes &&
+    prev.especiesList === next.especiesList
+  );
 });
 
 CardPacote.displayName = 'CardPacote';
@@ -180,6 +191,15 @@ export default function NovoRomaneio() {
     limparRascunho();
     resetForm();
     setTemRascunhoAviso(false);
+    Swal.fire({
+      icon: 'info',
+      title: 'Rascunho Descartado',
+      text: 'O rascunho anterior foi descartado.',
+      timer: 1600,
+      showConfirmButton: false,
+      toast: true,
+      position: 'top-end'
+    });
   }, [limparRascunho, resetForm]);
 
   const handleAddPacote = useCallback(() => {
@@ -214,22 +234,31 @@ export default function NovoRomaneio() {
   const totaisGerais = useMemo(() => {
     let totalM3 = 0;
     let totalML = 0;
-    (pacotes || []).forEach(p => {
-      (p.itens || []).forEach(i => {
-        totalM3 += calcularVolumeM3(i.espessura, i.largura, i.comprimento, i.quantidade, tipoRomaneio);
-        totalML += calcularMetrosLineares(i.comprimento, i.quantidade, tipoRomaneio);
-      });
-    });
-    return { totalGeralM3: totalM3, totalGeralML: totalML };
+    let totalPecas = 0;
+
+    for (let p = 0; p < (pacotes || []).length; p++) {
+      const pacote = pacotes[p];
+      const itens = pacote.itens || [];
+      for (let i = 0; i < itens.length; i++) {
+        const it = itens[i];
+        if (it.espessura && it.largura && it.comprimento && it.quantidade) {
+          totalM3 += calcularVolumeM3(it.espessura, it.largura, it.comprimento, it.quantidade, tipoRomaneio);
+          totalML += calcularMetrosLineares(it.comprimento, it.quantidade, tipoRomaneio);
+          totalPecas += Number(it.quantidade) || 0;
+        }
+      }
+    }
+
+    return { totalGeralM3: totalM3, totalGeralML: totalML, totalGeralPecas: totalPecas };
   }, [pacotes, tipoRomaneio]);
 
   const totalGeralM3 = totaisGerais.totalGeralM3;
   const totalGeralML = totaisGerais.totalGeralML;
 
   const resumos = useMemo(() => {
-    if (!mostrarResumo && totalGeralM3 === 0) return null;
+    if (!mostrarResumo) return null;
     return calcularResumosConsolidados(pacotes, tipoRomaneio);
-  }, [pacotes, tipoRomaneio, mostrarResumo, totalGeralM3]);
+  }, [pacotes, tipoRomaneio, mostrarResumo]);
 
   const salvarRomaneio = useCallback(async () => {
     if (!cliente.trim()) {
@@ -292,250 +321,258 @@ export default function NovoRomaneio() {
     if (pacoteSemItens) {
       Swal.fire({
         icon: 'warning',
-        title: 'Atenção',
-        text: `Preencha pelo menos uma linha de cubagem completa para todos os pacotes. (O Pacote Nº ${pacoteSemItens.numero} está vazio ou incompleto).`,
+        title: 'Pacote Incompleto',
+        text: `O Pacote Nº ${pacoteSemItens.numero} não possui nenhuma linha de cubagem preenchida corretamente.`,
         confirmButtonColor: '#059669',
         customClass: { popup: 'rounded-3xl', confirmButton: 'rounded-xl font-bold px-6 py-3 shadow-md' }
       });
       return;
     }
-
-    // Validar se existem números de pacotes duplicados
-    const numerosPacotes = pacotes.map(p => p.numero);
-    const temNumeroDuplicado = numerosPacotes.some((num, idx) => numerosPacotes.indexOf(num) !== idx);
-    if (temNumeroDuplicado) {
-      Swal.fire({
-        icon: 'warning',
-        title: 'Atenção',
-        text: 'Existem pacotes com numeração duplicada.',
-        confirmButtonColor: '#059669',
-        customClass: { popup: 'rounded-3xl', confirmButton: 'rounded-xl font-bold px-6 py-3 shadow-md' }
-      });
-      return;
-    }
-
-    const pacotesValidos = pacotes.map(p => ({
-      ...p,
-      itens: p.itens.filter(
-        i =>
-          i.espessura &&
-          i.largura &&
-          i.comprimento &&
-          i.quantidade &&
-          Number(i.espessura) > 0 &&
-          isLarguraValida(i.largura) &&
-          Number(i.comprimento) > 0 &&
-          Number(i.quantidade) > 0
-      )
-    }));
 
     setSalvando(true);
 
-    const romaneioData = {
-      cliente,
-      data,
-      total_m3: totalGeralM3,
-      total_ml: totalGeralML,
-      tipo_romaneio: tipoRomaneio,
-      pacotes: pacotesValidos.map(p => {
-        const itensDesmembrados = p.itens.flatMap(i => {
+    try {
+      const pacotesFormatados = pacotes.map(p => {
+        let pM3 = 0;
+        let pML = 0;
+        const itensFormatados: any[] = [];
+
+        const itensFiltrados = p.itens.filter(
+          i =>
+            i.espessura &&
+            i.largura &&
+            i.comprimento &&
+            i.quantidade &&
+            Number(i.espessura) > 0 &&
+            isLarguraValida(i.largura) &&
+            Number(i.comprimento) > 0 &&
+            Number(i.quantidade) > 0
+        );
+
+        itensFiltrados.forEach(i => {
+          const esp = Number(i.espessura);
+          const comp = Number(i.comprimento);
           const lStr = String(i.largura).trim();
-          if (/[\s-]+/.test(lStr)) {
-            const larguras = lStr.split(/\s*-\s*|\s+/).map(Number);
-            return larguras.map(l => ({
-              espessura: Number(i.espessura),
-              largura: l,
-              comprimento: Number(i.comprimento),
-              quantidade: 1,
-              volume_m3: calcularVolumeM3(i.espessura, l, i.comprimento, 1, tipoRomaneio),
-              volume_ml: calcularMetrosLineares(i.comprimento, 1, tipoRomaneio)
-            }));
+
+          if (tipoRomaneio === 'aberta' && /[\s-]+/.test(lStr)) {
+            const larguras = lStr.split(/[\s-]+/).map(Number).filter(x => !isNaN(x) && x > 0);
+            for (const l of larguras) {
+              const subM3 = calcularVolumeM3(esp, l, comp, 1, tipoRomaneio);
+              const subML = calcularMetrosLineares(comp, 1, tipoRomaneio);
+              pM3 += subM3;
+              pML += subML;
+              itensFormatados.push({
+                espessura: esp,
+                largura: l,
+                comprimento: comp,
+                quantidade: 1,
+                volume_m3: subM3,
+                volume_ml: subML
+              });
+            }
           } else {
-            return [
-              {
-                espessura: Number(i.espessura),
-                largura: Number(i.largura),
-                comprimento: Number(i.comprimento),
-                quantidade: Number(i.quantidade),
-                volume_m3: calcularVolumeM3(i.espessura, i.largura, i.comprimento, i.quantidade, tipoRomaneio),
-                volume_ml: calcularMetrosLineares(i.comprimento, i.quantidade, tipoRomaneio)
-              }
-            ];
+            const larg = Number(i.largura);
+            const qtd = Number(i.quantidade);
+            const itemM3 = calcularVolumeM3(esp, larg, comp, qtd, tipoRomaneio);
+            const itemML = calcularMetrosLineares(comp, qtd, tipoRomaneio);
+            pM3 += itemM3;
+            pML += itemML;
+            itensFormatados.push({
+              espessura: esp,
+              largura: larg,
+              comprimento: comp,
+              quantidade: qtd,
+              volume_m3: itemM3,
+              volume_ml: itemML
+            });
           }
         });
 
         return {
           numero_pacote: p.numero,
-          especie: p.especie,
-          total_m3: itensDesmembrados.reduce((acc, i) => acc + i.volume_m3, 0),
-          total_ml: itensDesmembrados.reduce((acc, i) => acc + i.volume_ml, 0),
-          itens: itensDesmembrados
+          especie: p.especie.trim(),
+          total_m3: pM3,
+          total_ml: pML,
+          itens: itensFormatados
         };
-      })
-    };
+      });
 
-    try {
-      const result = await window.electronAPI.saveRomaneio(romaneioData);
-      if (result.success) {
-        limparRascunho();
-        Swal.fire({
-          icon: 'success',
-          title: 'Sucesso!',
-          text: 'Romaneio salvo com sucesso!',
-          customClass: { popup: 'rounded-3xl', confirmButton: 'rounded-xl font-bold px-6 py-3' }
-        }).then(() => {
-          resetForm();
-          navigate('/');
-        });
-      } else {
-        Swal.fire({ icon: 'error', title: 'Erro', text: result.error, customClass: { popup: 'rounded-3xl' } });
+      const payload = {
+        cliente: cliente.trim(),
+        data,
+        tipo_romaneio: tipoRomaneio,
+        total_m3: totalGeralM3,
+        total_ml: totalGeralML,
+        pacotes: pacotesFormatados
+      };
+
+      const res = await window.electronAPI.saveRomaneio(payload);
+      if (!res.success) {
+        throw new Error(res.error || 'Erro ao salvar romaneio');
       }
-    } catch {
-      Swal.fire({ icon: 'error', title: 'Erro', text: 'Falha de comunicação', customClass: { popup: 'rounded-3xl' } });
+
+      // Limpar rascunho após salvar com sucesso
+      limparRascunho();
+      resetForm();
+
+      const novoId = res.id;
+      await Swal.fire({
+        icon: 'success',
+        title: 'Romaneio Salvo!',
+        text: novoId ? `O Romaneio #${novoId} foi gravado com sucesso!` : 'Romaneio gravado com sucesso!',
+        confirmButtonColor: '#059669',
+        customClass: { popup: 'rounded-3xl', confirmButton: 'rounded-xl font-bold px-6 py-3' }
+      });
+
+      if (novoId) {
+        navigate(`/visualizar/${novoId}`);
+      } else {
+        navigate('/');
+      }
+    } catch (err: any) {
+      console.error(err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Erro ao Salvar',
+        text: err.message || 'Houve uma falha inesperada ao tentar salvar.',
+        confirmButtonColor: '#059669'
+      });
+    } finally {
+      setSalvando(false);
     }
-    setSalvando(false);
   }, [cliente, data, pacotes, tipoRomaneio, totalGeralM3, totalGeralML, limparRascunho, resetForm, navigate]);
 
   // Atalhos de teclado globais
   useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      // Ctrl + S -> Salvar
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    const handleKeyDownGlobal = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         salvarRomaneio();
       }
-      // Ctrl + Enter -> Novo Pacote
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         handleAddPacote();
       }
     };
-
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+    window.addEventListener('keydown', handleKeyDownGlobal);
+    return () => window.removeEventListener('keydown', handleKeyDownGlobal);
   }, [salvarRomaneio, handleAddPacote]);
+
+  const getTipoLabel = () => {
+    switch (tipoRomaneio) {
+      case 'aberta':
+        return 'Larguras Variadas (Bica Corrida)';
+      case 'pes':
+        return 'Pés Corridos / Polegadas (Exportação)';
+      case 'padrao':
+      default:
+        return 'Larguras Fixas (Padrão M³)';
+    }
+  };
 
   return (
     <>
-      <div className="w-full mx-auto space-y-8 pb-32 page-transition">
-        {/* Banner de Rascunho Encontrado */}
-        {temRascunhoAviso && (
-          <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+      <div className="space-y-6 max-w-7xl mx-auto pb-24">
+        {/* Banner de Rascunho Recuperável */}
+        <AnimatePresence>
+          {temRascunhoAviso && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-amber-500/10 border border-amber-500/30 dark:bg-amber-500/10 dark:border-amber-500/20 p-4 rounded-2xl flex items-center justify-between gap-4 shadow-sm"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+                  <AlertTriangle size={18} />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                    Rascunho Não Salvo Encontrado
+                  </h4>
+                  <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                    Existe um romaneio que você começou a preencher anteriormente. Deseja restaurá-lo?
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleRestaurarRascunho}
+                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <RotateCcw size={14} /> Restaurar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDescartarRascunho}
+                  className="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 rounded-xl font-bold text-xs transition-all cursor-pointer"
+                >
+                  Descartar
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Top Header Card */}
+        <div className="glass-card p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20"></div>
+
+          <div className="space-y-2 relative">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400 rounded-xl">
-                <AlertTriangle size={20} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-amber-800 dark:text-amber-300">Rascunho não salvo detectado</h4>
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Encontramos dados de um romaneio anterior que não foi finalizado.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleRestaurarRascunho}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
-              >
-                <RotateCcw size={14} /> Restaurar Rascunho
-              </button>
-              <button
-                onClick={handleDescartarRascunho}
-                className="bg-white dark:bg-slate-900 hover:bg-amber-100 dark:hover:bg-amber-950/60 text-amber-700 dark:text-amber-400 font-bold text-xs px-3 py-2 rounded-xl border border-amber-200 dark:border-amber-900/50 transition-all cursor-pointer"
-              >
-                Descartar
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Cabeçalho e Seletor de Tipo de Romaneio */}
-        <div className="glass-panel p-8 sm:p-10 relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-3 h-full bg-gradient-to-b from-emerald-400 to-emerald-600"></div>
-
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
-            <div className="flex items-center gap-3">
-              <div className="bg-emerald-100 dark:bg-emerald-950/30 p-2.5 rounded-xl text-emerald-600 dark:text-emerald-450">
-                <PackageSearch size={28} strokeWidth={2.5} />
-              </div>
-              <div>
-                <h2 className="text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight">
-                  Informações Gerais
-                </h2>
-                <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold mt-0.5">
-                  Configure o tipo de cubagem, cliente e data da medição
-                </p>
-              </div>
-            </div>
-
-            {/* Indicador do Tipo de Romaneio e Botão para Abrir Modal */}
-            <div className="flex items-center gap-2.5 self-start lg:self-auto">
-              <div className="flex items-center gap-2 bg-slate-100/80 dark:bg-slate-950/80 px-4 py-2.5 rounded-2xl border border-slate-200/60 dark:border-slate-800">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                  Tipo:
-                </span>
-                <span className={`text-xs font-black px-3 py-1 rounded-xl flex items-center gap-1.5 ${
-                  tipoRomaneio === 'padrao'
-                    ? 'bg-emerald-500 text-white shadow-sm'
-                    : tipoRomaneio === 'aberta'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-amber-500 text-white shadow-sm'
-                }`}>
-                  {tipoRomaneio === 'padrao' && <><Layers size={13} /> Padrão (Fixas)</>}
-                  {tipoRomaneio === 'aberta' && <><Ruler size={13} /> Bica Corrida (Aberta)</>}
-                  {tipoRomaneio === 'pes' && <><Sparkles size={13} /> Ipê (Pés)</>}
-                </span>
-              </div>
-
+              <span className="badge badge-emerald">Novo Romaneio</span>
               <button
                 type="button"
                 onClick={() => setModalTipoAberto(true)}
-                className="text-xs font-bold text-slate-600 hover:text-emerald-600 dark:text-slate-300 dark:hover:text-emerald-400 bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-all cursor-pointer shadow-2xs"
-                title="Trocar formato de romaneio"
+                className="text-xs font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-200/50 dark:border-emerald-800/40 flex items-center gap-1 transition-all cursor-pointer hover:shadow-xs"
               >
-                Alterar Tipo
+                <Sparkles size={13} /> {getTipoLabel()} • Trocar
               </button>
             </div>
+            <h1 className="text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight">
+              Lançamento de Romaneio
+            </h1>
+            <p className="text-sm text-slate-400 font-medium">
+              Preencha os dados do cliente e lance os pacotes de madeira serrada.
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="flex flex-wrap items-center gap-4 relative">
             <div>
-              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1">
-                Fornecedor / Cliente <span className="text-red-400">*</span>
-              </label>
-              <input
-                type="text"
-                className={`glass-input w-full px-5 py-4 text-slate-800 dark:text-slate-100 font-bold transition-all ${
-                  clienteError ? 'border-red-400 ring-4 ring-red-400/10 bg-red-50/30 dark:bg-red-950/20' : ''
-                }`}
-                placeholder="Digite o nome do fornecedor ou cliente"
-                value={cliente}
-                onChange={e => {
-                  setCliente(e.target.value);
-                  if (e.target.value.trim()) setClienteError(false);
-                }}
-              />
-              {clienteError && (
-                <p className="text-xs text-red-500 dark:text-red-450 font-bold mt-1.5 ml-1 flex items-center gap-1">
-                  <span>⚠</span> Campo obrigatório
-                </p>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
                 Data do Romaneio
               </label>
               <input
                 type="date"
-                className="glass-input w-full px-5 py-4 text-slate-800 dark:text-slate-100 font-bold"
+                className="glass-input px-4 py-2.5 font-bold text-slate-700 dark:text-slate-200 text-sm"
                 value={data}
                 onChange={e => setData(e.target.value)}
+              />
+            </div>
+            <div className="flex-1 min-w-[240px]">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                Fornecedor / Cliente <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: Madeireira São Bento"
+                className={`w-full glass-input px-4 py-2.5 font-bold text-slate-800 dark:text-slate-100 text-sm ${
+                  clienteError && !cliente.trim()
+                    ? 'border-red-500 ring-2 ring-red-500/20'
+                    : 'focus:border-emerald-500'
+                }`}
+                value={cliente}
+                onChange={e => {
+                  setCliente(e.target.value);
+                  if (clienteError) setClienteError(false);
+                }}
               />
             </div>
           </div>
         </div>
 
-        {/* Lista de Pacotes (Componentes Isolados Memoizados) */}
+        {/* Lista de Pacotes */}
         <div className="space-y-6">
           {pacotes.map((pacote, index) => (
             <CardPacote
@@ -554,45 +591,48 @@ export default function NovoRomaneio() {
           ))}
         </div>
 
-        {/* Botão Adicionar Novo Pacote */}
-        <div className="flex flex-col items-center gap-2 pt-2">
+        {/* Botão Adicionar Pacote */}
+        <div className="flex flex-col items-center justify-center gap-2 pt-2">
           {addPacoteError && (
-            <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 text-amber-700 dark:text-amber-500 text-xs font-bold px-5 py-2.5 rounded-2xl">
-              <span>⚠</span> {addPacoteError}
-            </div>
+            <span className="text-xs text-amber-600 dark:text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 px-4 py-2 rounded-xl border border-amber-200 dark:border-amber-900/50">
+              <AlertTriangle size={14} /> {addPacoteError}
+            </span>
           )}
           <button
             onClick={handleAddPacote}
-            className="glass-card border border-emerald-200 dark:border-emerald-900/30 hover:border-emerald-300 dark:hover:border-emerald-800 text-slate-800 dark:text-slate-200 px-8 py-4 rounded-2xl font-black transition-all flex items-center gap-3 shadow-sm hover:shadow-md text-sm cursor-pointer"
+            type="button"
+            className="w-full md:w-auto px-8 py-4 glass-card border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-2xl text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all hover:shadow-lg cursor-pointer"
           >
-            <div className="bg-emerald-100 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 p-1.5 rounded-lg">
-              <Plus size={20} strokeWidth={3} />
-            </div>
-            Adicionar Novo Pacote
+            <Plus size={20} strokeWidth={3} /> Adicionar Novo Pacote
           </button>
         </div>
 
-        {/* Resumo Consolidado Acumulado */}
+        {/* Painel Sanfona do Resumo Consolidado */}
         {totalGeralM3 > 0 && (
-          <div className="glass-panel overflow-hidden transition-all duration-300 mt-8 border-slate-200 dark:border-slate-800">
+          <div className="glass-card overflow-hidden border border-slate-200/50 dark:border-slate-800/50">
             <button
+              type="button"
               onClick={() => setMostrarResumo(!mostrarResumo)}
-              className="w-full flex items-center justify-between p-6 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors text-left outline-none cursor-pointer"
+              className="w-full p-5 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50 hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors text-left cursor-pointer"
             >
-              <div className="flex items-center gap-4">
-                <div className="bg-slate-800 dark:bg-slate-950 text-white p-2.5 rounded-xl shadow-md">
-                  <BarChart3 size={20} strokeWidth={2.5} />
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <BarChart3 size={16} />
                 </div>
                 <div>
-                  <h3 className="font-black text-slate-800 dark:text-slate-100 text-base">Resumo Consolidado</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-450 font-semibold mt-0.5">
-                    Balanço por espécie, bitola e faixas de comprimento
+                  <h3 className="text-sm font-black text-slate-800 dark:text-slate-100 tracking-tight">
+                    Resumo Consolidado do Romaneio
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Totais por Espécie, Bitola e Faixas de Madeira
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-4">
                 <span className="text-xs bg-slate-100 dark:bg-slate-850 text-slate-600 dark:text-slate-400 px-3 py-1.5 rounded-full font-black tracking-widest border border-slate-200 dark:border-slate-800 uppercase">
-                  {resumos ? `${resumos.porEspecie.length} Espécie(s) | ${resumos.totalPecasGeral} Peças` : 'Ver Resumo'}
+                  {mostrarResumo && resumos
+                    ? `${resumos.porEspecie.length} Espécie(s) | ${resumos.totalPecasGeral} Peças`
+                    : `${pacotes.length} Pacote(s) | ${totaisGerais.totalGeralPecas} Peças`}
                 </span>
                 {mostrarResumo ? (
                   <ChevronUp className="text-slate-400" size={20} strokeWidth={2.5} />
@@ -608,11 +648,12 @@ export default function NovoRomaneio() {
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
-                  className="border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm p-8 grid grid-cols-1 xl:grid-cols-2 gap-8"
+                  className="p-6 border-t border-slate-100 dark:border-slate-800 space-y-6"
                 >
-                  <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Resumo por Espécie */}
                     <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em]">
+                      <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
                         Consolidado por Espécie
                       </h4>
                       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]">
@@ -623,7 +664,7 @@ export default function NovoRomaneio() {
                               <th className="px-5 py-3.5 text-center">Peças</th>
                               <th className="px-5 py-3.5 text-center">Total ML</th>
                               <th className="px-5 py-3.5 text-center">Total M³</th>
-                              <th className="px-5 py-3.5 text-center w-24">% Vol</th>
+                              <th className="px-5 py-3.5 text-center w-20">% Vol</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-600 dark:text-slate-300 font-semibold">
@@ -645,9 +686,10 @@ export default function NovoRomaneio() {
                       </div>
                     </div>
 
-                    <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800/60">
-                      <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em]">
-                        Consolidado por Categoria de Comprimento
+                    {/* Resumo por Categoria de Comprimento */}
+                    <div className="space-y-4">
+                      <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                        Faixas de Comprimento
                       </h4>
                       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]">
                         <table className="w-full text-xs text-left">
@@ -655,14 +697,16 @@ export default function NovoRomaneio() {
                             <tr>
                               <th className="px-5 py-3.5">Categoria</th>
                               <th className="px-5 py-3.5 text-center">Volume M³</th>
-                              <th className="px-5 py-3.5 text-center w-24">% Vol</th>
+                              <th className="px-5 py-3.5 text-center w-24">% Volume</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-600 dark:text-slate-300 font-semibold">
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
                             {tipoRomaneio === 'pes' ? (
                               <>
                                 <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                                  <td className="px-5 py-3 font-bold text-slate-800 dark:text-slate-100">6 PÉS E ABAIXO</td>
+                                  <td className="px-5 py-3 font-bold text-slate-800 dark:text-slate-100">
+                                    6 PÉS E ABAIXO (&lt;= 6&apos;)
+                                  </td>
                                   <td className="px-5 py-3 text-center font-black text-red-600 dark:text-red-450 bg-red-50/20 dark:bg-red-950/10">
                                     {resumos.totalAbaixo6M3.toFixed(3).replace('.', ',')}
                                   </td>
@@ -675,7 +719,9 @@ export default function NovoRomaneio() {
                                   </td>
                                 </tr>
                                 <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                                  <td className="px-5 py-3 font-bold text-slate-800 dark:text-slate-100">7 PÉS</td>
+                                  <td className="px-5 py-3 font-bold text-slate-800 dark:text-slate-100">
+                                    7 PÉS (7&apos;)
+                                  </td>
                                   <td className="px-5 py-3 text-center font-black text-amber-600 dark:text-amber-450 bg-amber-50/20 dark:bg-amber-950/10">
                                     {resumos.total7M3.toFixed(3).replace('.', ',')}
                                   </td>
@@ -688,7 +734,9 @@ export default function NovoRomaneio() {
                                   </td>
                                 </tr>
                                 <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                                  <td className="px-5 py-3 font-bold text-slate-800 dark:text-slate-100">8 PÉS E ACIMA</td>
+                                  <td className="px-5 py-3 font-bold text-slate-800 dark:text-slate-100">
+                                    8 PÉS E ACIMA (&gt;= 8&apos;)
+                                  </td>
                                   <td className="px-5 py-3 text-center font-black text-emerald-600 dark:text-emerald-450 bg-emerald-50/20 dark:bg-emerald-950/10">
                                     {resumos.totalAcima8M3.toFixed(3).replace('.', ',')}
                                   </td>

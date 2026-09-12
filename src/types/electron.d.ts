@@ -46,8 +46,8 @@ export interface ElectronAPI {
   // DB Core
   queryDB: <T = Record<string, unknown>>(query: string, params?: unknown[]) => Promise<{ success: boolean; data?: T[]; error?: string }>;
   executeDB: (query: string, params?: unknown[]) => Promise<{ success: boolean; error?: string }>;
-  saveRomaneio: (data: RomaneioData) => Promise<{ success: boolean; error?: string }>;
-  updateRomaneio: (data: RomaneioData & { id: number }) => Promise<{ success: boolean; error?: string }>;
+  saveRomaneio: (data: RomaneioData) => Promise<{ success: boolean; id?: number; error?: string }>;
+  updateRomaneio: (data: RomaneioData & { id: number }) => Promise<{ success: boolean; id?: number; error?: string }>;
 
   // Backup
   backupDB: (destPath?: string) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>;

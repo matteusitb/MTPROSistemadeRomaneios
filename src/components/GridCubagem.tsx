@@ -7,28 +7,86 @@ import { calcularVolumeM3, calcularMetrosLineares, validarToleranciaMedida } fro
 // Refs para foco automático na nova linha (por id de item)
 const newRowFocusRef: { [key: string]: HTMLInputElement | null } = {};
 
-interface InputLarguraProps {
+const displayVal = (val: string | number | undefined | null) => {
+  if (val === '' || val === undefined || val === null) return '';
+  return String(val).replace('.', ',');
+};
+
+// -------------------------------------------------------------
+// Componentes de Input Otimizados com Estado Local (0ms lag)
+// -------------------------------------------------------------
+
+interface InputEspessuraProps {
   item: RomaneioItem;
-  tipoRomaneio: string;
   onChangeGlobal: (itemId: string, field: keyof RomaneioItem, val: string) => void;
   onBlurGlobal: (itemId: string, field: keyof RomaneioItem, val: string | number) => void;
   onKeyDown: (e: React.KeyboardEvent, item: RomaneioItem) => void;
 }
 
+const InputEspessura = React.memo(({ item, onChangeGlobal, onBlurGlobal, onKeyDown }: InputEspessuraProps) => {
+  const [localValue, setLocalValue] = useState(() => displayVal(item.espessura));
+  const isFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isFocusedRef.current) {
+      setLocalValue(displayVal(item.espessura));
+    }
+  }, [item.espessura]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    const sanitized = val.replace(/[^0-9.,]/g, '').replace(',', '.');
+    setLocalValue(val.replace('.', ','));
+    onChangeGlobal(item.id, 'espessura', sanitized);
+  };
+
+  const handleBlur = () => {
+    isFocusedRef.current = false;
+    let cleanVal = localValue.trim().replace(',', '.');
+    if (cleanVal !== '' && !cleanVal.includes('.')) {
+      const num = Number(cleanVal);
+      if (!isNaN(num) && num >= 10) {
+        cleanVal = (num / 10).toString();
+        setLocalValue(cleanVal.replace('.', ','));
+      }
+    }
+    const finalNum = Number(cleanVal);
+    onBlurGlobal(item.id, 'espessura', isNaN(finalNum) || cleanVal === '' ? cleanVal : finalNum);
+  };
+
+  return (
+    <input
+      type="text"
+      className="w-full p-2.5 text-center bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl hover:border-emerald-300 dark:hover:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-bold text-slate-800 dark:text-slate-100 shadow-sm text-sm"
+      value={localValue}
+      onFocus={() => { isFocusedRef.current = true; }}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyDown={e => onKeyDown(e, item)}
+      placeholder="Ex: 5"
+    />
+  );
+});
+
+InputEspessura.displayName = 'InputEspessura';
+
+interface InputLarguraProps {
+  item: RomaneioItem;
+  tipoRomaneio: string;
+  onChangeLargura: (itemId: string, val: string) => void;
+  onBlurLargura: (itemId: string, val: string) => void;
+  onKeyDown: (e: React.KeyboardEvent, item: RomaneioItem) => void;
+}
+
 const InputLargura = React.memo(
   React.forwardRef<HTMLInputElement, InputLarguraProps>(
-    ({ item, tipoRomaneio, onChangeGlobal, onBlurGlobal, onKeyDown }, ref) => {
-      const displayVal = (val: string | number) => {
-        if (val === '') return '';
-        return String(val).replace('.', ',');
-      };
-
+    ({ item, tipoRomaneio, onChangeLargura, onBlurLargura, onKeyDown }, ref) => {
       const [localValue, setLocalValue] = useState(() => displayVal(item.largura));
+      const isFocusedRef = useRef(false);
 
       useEffect(() => {
-        const formatted = displayVal(item.largura);
-        if (formatted !== localValue) {
-          setLocalValue(formatted);
+        if (!isFocusedRef.current) {
+          setLocalValue(displayVal(item.largura));
         }
       }, [item.largura]);
 
@@ -49,13 +107,13 @@ const InputLargura = React.memo(
           sanitized = val.replace(/[^0-9.,]/g, '').replace(',', '.');
         }
 
-        setLocalValue(sanitized.replace('.', ','));
-        onChangeGlobal(item.id, 'largura', sanitized);
+        setLocalValue(sanitized.replace(/\./g, ','));
+        onChangeLargura(item.id, sanitized);
       };
 
       const handleBlur = () => {
-        const cleanVal = localValue.replace(',', '.');
-        onBlurGlobal(item.id, 'largura', cleanVal);
+        isFocusedRef.current = false;
+        onBlurLargura(item.id, localValue);
       };
 
       return (
@@ -64,10 +122,11 @@ const InputLargura = React.memo(
           type="text"
           className="w-full p-2.5 text-center bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl hover:border-emerald-300 dark:hover:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-bold text-slate-800 dark:text-slate-100 shadow-sm text-sm"
           value={localValue}
+          onFocus={() => { isFocusedRef.current = true; }}
           onChange={handleChange}
           onBlur={handleBlur}
           onKeyDown={e => onKeyDown(e, item)}
-          placeholder="Ex: 11"
+          placeholder={tipoRomaneio === 'aberta' ? 'Ex: 12 - 15 - 18' : 'Ex: 11'}
         />
       );
     }
@@ -75,6 +134,138 @@ const InputLargura = React.memo(
 );
 
 InputLargura.displayName = 'InputLargura';
+
+interface InputComprimentoProps {
+  item: RomaneioItem;
+  tipoRomaneio: string;
+  onChangeGlobal: (itemId: string, field: keyof RomaneioItem, val: string) => void;
+  onBlurGlobal: (itemId: string, field: keyof RomaneioItem, val: string | number) => void;
+  onKeyDown: (e: React.KeyboardEvent, item: RomaneioItem) => void;
+}
+
+const InputComprimento = React.memo(
+  React.forwardRef<HTMLInputElement, InputComprimentoProps>(
+    ({ item, tipoRomaneio, onChangeGlobal, onBlurGlobal, onKeyDown }, ref) => {
+      const formatComprimento = (val: string | number | undefined | null) => {
+        if (val === '' || val === undefined || val === null) return '';
+        if (tipoRomaneio === 'pes') return String(val).replace('.', ',');
+        const num = Number(String(val).replace(',', '.'));
+        if (isNaN(num)) return String(val).replace('.', ',');
+        return num.toFixed(2).replace('.', ',');
+      };
+
+      const [isFocused, setIsFocused] = useState(false);
+      const [localValue, setLocalValue] = useState(() => formatComprimento(item.comprimento));
+
+      useEffect(() => {
+        if (!isFocused) {
+          setLocalValue(formatComprimento(item.comprimento));
+        }
+      }, [item.comprimento, tipoRomaneio, isFocused]);
+
+      const handleFocus = () => {
+        setIsFocused(true);
+      };
+
+      const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = e.target.value;
+        const sanitized = val.replace(/[^0-9.,]/g, '').replace(',', '.');
+        setLocalValue(val.replace('.', ','));
+        onChangeGlobal(item.id, 'comprimento', sanitized);
+      };
+
+      const handleBlur = () => {
+        setIsFocused(false);
+        let cleanVal = localValue.trim().replace(',', '.');
+
+        if (cleanVal !== '' && !cleanVal.includes('.')) {
+          const num = Number(cleanVal);
+          if (tipoRomaneio !== 'pes' && !isNaN(num) && num >= 100) {
+            cleanVal = (num / 100).toString();
+          }
+        }
+
+        const finalNum = Number(cleanVal);
+        onBlurGlobal(item.id, 'comprimento', isNaN(finalNum) || cleanVal === '' ? cleanVal : finalNum);
+      };
+
+      return (
+        <input
+          ref={ref}
+          type="text"
+          className="w-full p-2.5 text-center bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl hover:border-emerald-300 dark:hover:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-bold text-slate-800 dark:text-slate-100 shadow-sm text-sm"
+          value={isFocused ? localValue : formatComprimento(item.comprimento)}
+          onFocus={handleFocus}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          onKeyDown={e => onKeyDown(e, item)}
+          placeholder={tipoRomaneio === 'pes' ? 'Ex: 10' : 'Ex: 4,50'}
+        />
+      );
+    }
+  )
+);
+
+InputComprimento.displayName = 'InputComprimento';
+
+interface InputQuantidadeProps {
+  item: RomaneioItem;
+  tipoRomaneio: string;
+  onChangeGlobal: (itemId: string, field: keyof RomaneioItem, val: string) => void;
+  onBlurGlobal: (itemId: string, field: keyof RomaneioItem, val: string | number) => void;
+  onKeyDown: (e: React.KeyboardEvent, item: RomaneioItem) => void;
+}
+
+const InputQuantidade = React.memo(({ item, tipoRomaneio, onChangeGlobal, onBlurGlobal, onKeyDown }: InputQuantidadeProps) => {
+  const isAberta = tipoRomaneio === 'aberta';
+  const [localValue, setLocalValue] = useState(() => (item.quantidade !== '' ? String(item.quantidade) : ''));
+  const isFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isFocusedRef.current) {
+      setLocalValue(item.quantidade !== '' ? String(item.quantidade) : '');
+    }
+  }, [item.quantidade]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isAberta) return;
+    const val = e.target.value.replace(/[^0-9]/g, '');
+    setLocalValue(val);
+    onChangeGlobal(item.id, 'quantidade', val);
+  };
+
+  const handleBlur = () => {
+    isFocusedRef.current = false;
+    if (isAberta) return;
+    const cleanVal = localValue.trim();
+    const finalNum = Number(cleanVal);
+    onBlurGlobal(item.id, 'quantidade', isNaN(finalNum) || cleanVal === '' ? cleanVal : finalNum);
+  };
+
+  return (
+    <input
+      type="text"
+      disabled={isAberta}
+      className={`w-full p-2.5 text-center border rounded-xl outline-none transition-all font-bold shadow-sm text-sm ${
+        isAberta
+          ? 'bg-slate-100/80 dark:bg-slate-900/50 text-slate-400 dark:text-slate-500 border-slate-200/60 dark:border-slate-800/60 cursor-not-allowed'
+          : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-800 dark:text-slate-100'
+      }`}
+      value={isAberta ? item.quantidade : localValue}
+      onFocus={() => { isFocusedRef.current = true; }}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyDown={e => onKeyDown(e, item)}
+      placeholder={isAberta ? 'Auto' : 'Qtd'}
+    />
+  );
+});
+
+InputQuantidade.displayName = 'InputQuantidade';
+
+// -------------------------------------------------------------
+// Componente de Linha da Tabela (Memoizado com Custom Comparator)
+// -------------------------------------------------------------
 
 interface LinhaGridRowProps {
   item: RomaneioItem;
@@ -84,20 +275,24 @@ interface LinhaGridRowProps {
   linhaIncompleta: boolean;
   pacoteId: string;
   onChangeField: (itemId: string, field: keyof RomaneioItem, value: string) => void;
+  onChangeLargura: (itemId: string, value: string) => void;
   onBlurField: (itemId: string, field: keyof RomaneioItem, value: string | number) => void;
+  onBlurLargura: (itemId: string, value: string) => void;
   onKeyDown: (e: React.KeyboardEvent, item: RomaneioItem) => void;
   onDuplicate: (pacoteId: string, itemId: string) => void;
   onRemove: (itemId: string) => void;
 }
 
-const LinhaGridRow = React.memo(({
+const LinhaGridRowComponent = ({
   item,
   index,
   tipoRomaneio,
   linhaIncompleta,
   pacoteId,
   onChangeField,
+  onChangeLargura,
   onBlurField,
+  onBlurLargura,
   onKeyDown,
   onDuplicate,
   onRemove
@@ -105,12 +300,6 @@ const LinhaGridRow = React.memo(({
   const m3 = calcularVolumeM3(item.espessura, item.largura, item.comprimento, item.quantidade, tipoRomaneio);
   const ml = calcularMetrosLineares(item.comprimento, item.quantidade, tipoRomaneio);
   const tolerancia = validarToleranciaMedida(item.espessura, item.largura, item.comprimento, tipoRomaneio);
-
-  const displayValue = (val: number | string, field: string) => {
-    if (val === '') return '';
-    if (field === 'comprimento' && tipoRomaneio === 'pes') return String(val);
-    return String(val).replace('.', ',');
-  };
 
   return (
     <tr
@@ -127,14 +316,11 @@ const LinhaGridRow = React.memo(({
       </td>
 
       <td className="p-1.5">
-        <input
-          type="text"
-          className="w-full p-2.5 text-center bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl hover:border-emerald-300 dark:hover:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-bold text-slate-800 dark:text-slate-100 shadow-sm text-sm"
-          value={displayValue(item.espessura, 'espessura')}
-          onChange={e => onChangeField(item.id, 'espessura', e.target.value)}
-          onBlur={() => onBlurField(item.id, 'espessura', item.espessura)}
-          onKeyDown={e => onKeyDown(e, item)}
-          placeholder="Ex: 5"
+        <InputEspessura
+          item={item}
+          onChangeGlobal={onChangeField}
+          onBlurGlobal={onBlurField}
+          onKeyDown={onKeyDown}
         />
       </td>
 
@@ -145,6 +331,16 @@ const LinhaGridRow = React.memo(({
           }}
           item={item}
           tipoRomaneio={tipoRomaneio}
+          onChangeLargura={onChangeLargura}
+          onBlurLargura={onBlurLargura}
+          onKeyDown={onKeyDown}
+        />
+      </td>
+
+      <td className="p-1.5">
+        <InputComprimento
+          item={item}
+          tipoRomaneio={tipoRomaneio}
           onChangeGlobal={onChangeField}
           onBlurGlobal={onBlurField}
           onKeyDown={onKeyDown}
@@ -152,30 +348,12 @@ const LinhaGridRow = React.memo(({
       </td>
 
       <td className="p-1.5">
-        <input
-          type="text"
-          className="w-full p-2.5 text-center bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl hover:border-emerald-300 dark:hover:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-bold text-slate-800 dark:text-slate-100 shadow-sm text-sm"
-          value={displayValue(item.comprimento, 'comprimento')}
-          onChange={e => onChangeField(item.id, 'comprimento', e.target.value)}
-          onBlur={() => onBlurField(item.id, 'comprimento', item.comprimento)}
-          onKeyDown={e => onKeyDown(e, item)}
-          placeholder={tipoRomaneio === 'pes' ? 'Ex: 10' : 'Ex: 4,50'}
-        />
-      </td>
-
-      <td className="p-1.5">
-        <input
-          type="text"
-          disabled={tipoRomaneio === 'aberta'}
-          className={`w-full p-2.5 text-center border rounded-xl outline-none transition-all font-bold shadow-sm text-sm ${
-            tipoRomaneio === 'aberta'
-              ? 'bg-slate-100/80 dark:bg-slate-900/50 text-slate-400 dark:text-slate-500 border-slate-200/60 dark:border-slate-800/60 cursor-not-allowed'
-              : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-800 dark:text-slate-100'
-          }`}
-          value={item.quantidade}
-          onChange={e => onChangeField(item.id, 'quantidade', e.target.value)}
-          onKeyDown={e => onKeyDown(e, item)}
-          placeholder={tipoRomaneio === 'aberta' ? 'Auto' : 'Qtd'}
+        <InputQuantidade
+          item={item}
+          tipoRomaneio={tipoRomaneio}
+          onChangeGlobal={onChangeField}
+          onBlurGlobal={onBlurField}
+          onKeyDown={onKeyDown}
         />
       </td>
 
@@ -189,6 +367,7 @@ const LinhaGridRow = React.memo(({
       <td className="px-4 py-2 text-center w-20">
         <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
           <button
+            type="button"
             onClick={() => onDuplicate(pacoteId, item.id)}
             tabIndex={-1}
             className="text-slate-400 hover:text-emerald-500 dark:text-slate-500 dark:hover:text-emerald-400 bg-slate-50 dark:bg-slate-950 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-all p-2 rounded-lg cursor-pointer shadow-sm dark:border dark:border-slate-800"
@@ -197,6 +376,7 @@ const LinhaGridRow = React.memo(({
             <Copy size={14} strokeWidth={2.5} />
           </button>
           <button
+            type="button"
             onClick={() => onRemove(item.id)}
             tabIndex={-1}
             className="text-slate-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 bg-slate-50 dark:bg-slate-950 hover:bg-red-50 dark:hover:bg-red-950/40 transition-all p-2 rounded-lg cursor-pointer shadow-sm dark:border dark:border-slate-800"
@@ -208,9 +388,24 @@ const LinhaGridRow = React.memo(({
       </td>
     </tr>
   );
+};
+
+const LinhaGridRow = React.memo(LinhaGridRowComponent, (prev, next) => {
+  return (
+    prev.item === next.item &&
+    prev.index === next.index &&
+    prev.isUltima === next.isUltima &&
+    prev.linhaIncompleta === next.linhaIncompleta &&
+    prev.tipoRomaneio === next.tipoRomaneio &&
+    prev.pacoteId === next.pacoteId
+  );
 });
 
 LinhaGridRow.displayName = 'LinhaGridRow';
+
+// -------------------------------------------------------------
+// Componente Principal GridCubagem
+// -------------------------------------------------------------
 
 export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteIndex?: number }) {
   const pacote = useRomaneioStore(useCallback(state => state.pacotes.find(p => p.id === pacoteId), [pacoteId]));
@@ -218,9 +413,16 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
   const addItem = useRomaneioStore(state => state.addItem);
   const removeItem = useRomaneioStore(state => state.removeItem);
   const updateItem = useRomaneioStore(state => state.updateItem);
+  const updateItemFields = useRomaneioStore(state => state.updateItemFields);
   const duplicateItem = useRomaneioStore(state => state.duplicateItem);
   const aplicarBitolaPacote = useRomaneioStore(state => state.aplicarBitolaPacote);
   const colarItensExcel = useRomaneioStore(state => state.colarItensExcel);
+
+  const pacoteRef = useRef(pacote);
+  pacoteRef.current = pacote;
+
+  const tipoRomaneioRef = useRef(tipoRomaneio);
+  tipoRomaneioRef.current = tipoRomaneio;
 
   const prevItemCountRef = useRef(0);
 
@@ -244,56 +446,60 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
       Swal.fire({
         icon: 'success',
         title: 'Dados importados!',
-        text: `${inseridos} linha(s) importada(s) do Excel com sucesso para o Pacote Nº ${pacote?.numero}.`,
+        text: `Dados importados com sucesso para o Pacote Nº ${pacoteRef.current?.numero} (${inseridos} linhas).`,
         timer: 2000,
         showConfirmButton: false,
         toast: true,
         position: 'bottom-end'
       });
     }
-  }, [colarItensExcel, pacoteId, pacote?.numero]);
+  }, [colarItensExcel, pacoteId]);
 
   const ultimaLinhaCompleta = useCallback(() => {
-    if (!pacote || pacote.itens.length === 0) return true;
-    const last = pacote.itens[pacote.itens.length - 1];
+    const currentPacote = pacoteRef.current;
+    if (!currentPacote || currentPacote.itens.length === 0) return true;
+    const last = currentPacote.itens[currentPacote.itens.length - 1];
     return !!(last.espessura !== '' && last.largura !== '' && last.comprimento !== '' && last.quantidade !== '');
-  }, [pacote]);
+  }, []);
 
-  const handleChange = useCallback((itemId: string, field: keyof RomaneioItem, value: string) => {
-    let sanitized = value;
-    if (field === 'largura') {
-      if (tipoRomaneio === 'aberta') {
-        sanitized = value.replace(/[^0-9.,\s-]/g, '').replace(',', '.');
-        const item = pacote?.itens.find(i => i.id === itemId);
-        const oldValStr = item ? String(item.largura ?? '') : '';
+  const handleChangeField = useCallback((itemId: string, field: keyof RomaneioItem, value: string) => {
+    updateItem(pacoteId, itemId, field, value === '' ? '' : value);
+  }, [pacoteId, updateItem]);
 
-        if (sanitized.length > oldValStr.length) {
-          if (/(\d)\s$/.test(sanitized)) {
-            sanitized = sanitized.replace(/(\d)\s$/, '$1 - ');
-          }
-        }
-      } else {
-        sanitized = value.replace(/[^0-9.,]/g, '').replace(',', '.');
-      }
-    } else {
-      sanitized = value.replace(/[^0-9.,]/g, '').replace(',', '.');
-    }
-    updateItem(pacoteId, itemId, field, sanitized === '' ? '' : sanitized);
-
-    if (field === 'largura' && tipoRomaneio === 'aberta') {
-      const partes = sanitized.split(/\s*-\s*|\s+/).map(p => p.trim()).filter(p => p !== '' && !isNaN(Number(p)));
+  const handleChangeLargura = useCallback((itemId: string, value: string) => {
+    const tipo = tipoRomaneioRef.current;
+    if (tipo === 'aberta') {
+      const partes = value.split(/\s*-\s*|\s+/).map(p => p.trim()).filter(p => p !== '' && !isNaN(Number(p)));
       const qtd = partes.length;
-      updateItem(pacoteId, itemId, 'quantidade', qtd > 0 ? qtd : '');
+      updateItemFields(pacoteId, itemId, {
+        largura: value === '' ? '' : value,
+        quantidade: qtd > 0 ? qtd : ''
+      });
+    } else {
+      updateItem(pacoteId, itemId, 'largura', value === '' ? '' : value);
     }
-  }, [pacote?.itens, pacoteId, tipoRomaneio, updateItem]);
+  }, [pacoteId, updateItem, updateItemFields]);
 
-  const handleBlur = useCallback((itemId: string, field: keyof RomaneioItem, value: string | number) => {
-    if (value === '') return;
+  const handleBlurField = useCallback((itemId: string, field: keyof RomaneioItem, value: string | number) => {
+    if (value === '') {
+      updateItem(pacoteId, itemId, field, '');
+      return;
+    }
+    const finalVal = typeof value === 'number' ? value : Number(String(value).trim().replace(',', '.'));
+    updateItem(pacoteId, itemId, field, isNaN(finalVal) ? value : finalVal);
+  }, [pacoteId, updateItem]);
+
+  const handleBlurLargura = useCallback((itemId: string, value: string) => {
+    if (!value || value.trim() === '') {
+      updateItem(pacoteId, itemId, 'largura', '');
+      return;
+    }
+    const tipo = tipoRomaneioRef.current;
     let valStr = String(value).trim();
 
-    if (field === 'largura' && tipoRomaneio === 'aberta') {
+    if (tipo === 'aberta') {
       const partes = valStr.split(/\s*-\s*|\s+/).map(p => {
-        let val = p.trim();
+        let val = p.trim().replace(',', '.');
         if (!val.includes('.')) {
           const num = Number(val);
           if (!isNaN(num) && num > 99) {
@@ -304,25 +510,23 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
       }).filter(x => !isNaN(x) && x > 0);
 
       const cleaned = partes.join(' - ');
-      updateItem(pacoteId, itemId, 'largura', cleaned);
-      updateItem(pacoteId, itemId, 'quantidade', partes.length > 0 ? partes.length : '');
+      updateItemFields(pacoteId, itemId, {
+        largura: cleaned,
+        quantidade: partes.length > 0 ? partes.length : ''
+      });
       return;
     }
 
-    if (!valStr.includes('.')) {
-      const num = Number(valStr);
-      if (field === 'espessura' && num >= 10) {
-        valStr = (num / 10).toString();
-      } else if (field === 'largura' && num > 99) {
-        valStr = (num / 10).toString();
-      } else if (field === 'comprimento' && num >= 100 && tipoRomaneio !== 'pes') {
-        valStr = (num / 100).toString();
+    let cleanVal = valStr.replace(',', '.');
+    if (!cleanVal.includes('.')) {
+      const num = Number(cleanVal);
+      if (!isNaN(num) && num > 99) {
+        cleanVal = (num / 10).toString();
       }
     }
-
-    const finalVal = Number(valStr);
-    updateItem(pacoteId, itemId, field, isNaN(finalVal) ? valStr : finalVal);
-  }, [pacoteId, tipoRomaneio, updateItem]);
+    const finalNum = Number(cleanVal);
+    updateItem(pacoteId, itemId, 'largura', isNaN(finalNum) ? cleanVal : finalNum);
+  }, [pacoteId, updateItem, updateItemFields]);
 
   const handleAddItem = useCallback(() => {
     if (!ultimaLinhaCompleta()) {
@@ -339,7 +543,8 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
   }, [addItem, pacoteId, ultimaLinhaCompleta]);
 
   const handleRemoveItem = useCallback((itemId: string) => {
-    if (!pacote || pacote.itens.length <= 1) {
+    const currentPacote = pacoteRef.current;
+    if (!currentPacote || currentPacote.itens.length <= 1) {
       Swal.fire({
         icon: 'info',
         title: 'Atenção',
@@ -350,7 +555,7 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
       return;
     }
     removeItem(pacoteId, itemId);
-  }, [pacote, pacoteId, removeItem]);
+  }, [pacoteId, removeItem]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent, item: RomaneioItem) => {
     if (e.key === 'Enter') {
@@ -374,12 +579,14 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
   }, [addItem, duplicateItem, pacoteId]);
 
   const handleAbrirFixarBitola = useCallback(async () => {
-    if (!pacote) return;
+    const currentPacote = pacoteRef.current;
+    if (!currentPacote) return;
+    const tipo = tipoRomaneioRef.current;
     const { value: formValues } = await Swal.fire({
       title: 'Fixar Bitola do Pacote',
       html: `
         <p class="text-xs text-slate-500 mb-4 font-semibold">
-          Defina a espessura e o comprimento padrão para <strong>todas as peças</strong> do Pacote Nº ${pacote.numero}:
+          Defina a espessura e o comprimento padrão para <strong>todas as peças</strong> do Pacote Nº ${currentPacote.numero}:
         </p>
         <div class="space-y-4 text-left font-sans">
           <div>
@@ -388,9 +595,9 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
           </div>
           <div>
             <label class="block text-xs font-black text-slate-600 mb-1">
-              ${tipoRomaneio === 'pes' ? 'Comprimento (pés):' : 'Comprimento (metros):'}
+              ${tipo === 'pes' ? 'Comprimento (pés):' : 'Comprimento (metros):'}
             </label>
-            <input id="swal-fix-comp" type="number" step="0.01" placeholder="${tipoRomaneio === 'pes' ? 'Ex: 10' : 'Ex: 4.50'}" class="w-full p-3 rounded-xl border border-slate-200 text-sm font-bold" />
+            <input id="swal-fix-comp" type="number" step="0.01" placeholder="${tipo === 'pes' ? 'Ex: 10' : 'Ex: 4.50'}" class="w-full p-3 rounded-xl border border-slate-200 text-sm font-bold" />
           </div>
         </div>
       `,
@@ -431,10 +638,9 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
         position: 'top-end'
       });
     }
-  }, [aplicarBitolaPacote, pacote, pacoteId, tipoRomaneio]);
+  }, [aplicarBitolaPacote, pacoteId]);
 
   const handleColarModal = useCallback(async () => {
-    if (!pacote) return;
     const { value: textoColado } = await Swal.fire({
       title: 'Colar Itens do Excel',
       html: `
@@ -466,7 +672,7 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
     if (textoColado) {
       handlePasteExcel(textoColado);
     }
-  }, [handlePasteExcel, pacote]);
+  }, [handlePasteExcel]);
 
   const totaisCalculados = useMemo(() => {
     if (!pacote) return { totalPacoteM3: 0, totalPacoteML: 0, totalPacotePecas: 0 };
@@ -474,14 +680,18 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
     let totalPacoteML = 0;
     let totalPacotePecas = 0;
 
-    pacote.itens.forEach(item => {
-      totalPacoteM3 += calcularVolumeM3(item.espessura, item.largura, item.comprimento, item.quantidade, tipoRomaneio);
-      totalPacoteML += calcularMetrosLineares(item.comprimento, item.quantidade, tipoRomaneio);
-      totalPacotePecas += Number(item.quantidade) || 0;
-    });
+    const itens = pacote.itens;
+    for (let i = 0; i < itens.length; i++) {
+      const item = itens[i];
+      if (item.espessura && item.largura && item.comprimento && item.quantidade) {
+        totalPacoteM3 += calcularVolumeM3(item.espessura, item.largura, item.comprimento, item.quantidade, tipoRomaneio);
+        totalPacoteML += calcularMetrosLineares(item.comprimento, item.quantidade, tipoRomaneio);
+        totalPacotePecas += Number(item.quantidade) || 0;
+      }
+    }
 
     return { totalPacoteM3, totalPacoteML, totalPacotePecas };
-  }, [pacote, tipoRomaneio]);
+  }, [pacote?.itens, tipoRomaneio]);
 
   if (!pacote) return null;
 
@@ -556,8 +766,10 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
                   isUltima={isUltima}
                   linhaIncompleta={linhaIncompleta}
                   pacoteId={pacoteId}
-                  onChangeField={handleChange}
-                  onBlurField={handleBlur}
+                  onChangeField={handleChangeField}
+                  onChangeLargura={handleChangeLargura}
+                  onBlurField={handleBlurField}
+                  onBlurLargura={handleBlurLargura}
                   onKeyDown={handleKeyDown}
                   onDuplicate={duplicateItem}
                   onRemove={handleRemoveItem}
@@ -592,6 +804,7 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
           </span>
         )}
         <button
+          type="button"
           onClick={handleAddItem}
           disabled={podeBloqueio}
           className={`flex items-center gap-2 text-xs font-black uppercase tracking-widest px-6 py-3 rounded-xl transition-all shadow-sm ${

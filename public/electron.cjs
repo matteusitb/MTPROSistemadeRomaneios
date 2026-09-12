@@ -582,7 +582,7 @@ protectedHandle('save-romaneio', (event, data) => {
     });
 
     saveDB();
-    return { success: true };
+    return { success: true, id: romaneio_id };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -630,7 +630,7 @@ protectedHandle('update-romaneio', (event, data) => {
     });
 
     saveDB();
-    return { success: true };
+    return { success: true, id };
   } catch (error) {
     return { success: false, error: error.message };
   }

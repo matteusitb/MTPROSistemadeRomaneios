@@ -5,7 +5,7 @@ import {
   FileSpreadsheet, Tag
 } from 'lucide-react';
 import Swal from 'sweetalert2';
-import { gerarPdfRomaneio } from '../utils/pdfGenerator';
+import { gerarPdfRomaneio, gerarPdfResumoConsolidado } from '../utils/pdfGenerator';
 import { motion } from 'framer-motion';
 import { ModalWhatsApp, WhatsAppIcon } from '../components/ModalWhatsApp';
 import { ModalEtiquetaPacote } from '../components/ModalEtiquetaPacote';
@@ -121,6 +121,30 @@ export default function VisualizarRomaneio() {
   const [pacotes, setPacotes] = useState<any[]>([]);
   const [abaAtiva, setAbaAtiva] = useState('resumo');
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [gerandoPdfResumo, setGerandoPdfResumo] = useState(false);
+
+  const gerarPDFResumo = () => {
+    if (!romaneio || pacotes.length === 0) return;
+    setGerandoPdfResumo(true);
+    Swal.fire({
+      title: 'Gerando Resumo Consolidado...',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading()
+    });
+
+    setTimeout(() => {
+      try {
+        const pdfDoc = gerarPdfResumoConsolidado(romaneio, pacotes);
+        pdfDoc.download(`Resumo_Consolidado_Romaneio_${romaneio.id.toString().padStart(4, '0')}.pdf`);
+        Swal.close();
+      } catch (err) {
+        console.error(err);
+        Swal.fire({ icon: 'error', title: 'Erro', text: 'Falha ao gerar o PDF do resumo consolidado.', customClass: { popup: 'rounded-3xl' } });
+      } finally {
+        setGerandoPdfResumo(false);
+      }
+    }, 100);
+  };
   const [whatsappModalAberto, setWhatsappModalAberto] = useState(false);
   const [etiquetaModalAberto, setEtiquetaModalAberto] = useState(false);
 
@@ -411,9 +435,20 @@ export default function VisualizarRomaneio() {
         {/* Conteúdo da Aba Consolidado / Todos */}
         {(abaAtiva === 'resumo' || abaAtiva === 'todos') && pacotes.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-8 relative overflow-hidden border-slate-200 dark:border-slate-800">
-            <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 mb-6 flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
-              <Box className="text-blue-600 dark:text-blue-400" size={20} strokeWidth={2.5} /> Resumo Consolidado do Romaneio
-            </h3>
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-3">
+                <Box className="text-blue-600 dark:text-blue-400" size={20} strokeWidth={2.5} /> Resumo Consolidado do Romaneio
+              </h3>
+              <button
+                onClick={gerarPDFResumo}
+                disabled={gerandoPdfResumo}
+                className="px-4 py-2.5 rounded-xl font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 dark:hover:text-white border border-blue-200/60 dark:border-blue-800/40 transition-all flex items-center gap-2 text-xs shadow-sm cursor-pointer hover:shadow-md active:scale-95 disabled:opacity-50"
+                title="Exportar PDF exclusivo deste Resumo Consolidado"
+              >
+                <FileDown size={16} strokeWidth={2.5} />
+                {gerandoPdfResumo ? 'Gerando...' : 'Exportar PDF do Resumo'}
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
               <div className="space-y-6">

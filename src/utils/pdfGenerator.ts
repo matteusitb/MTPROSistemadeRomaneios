@@ -424,3 +424,324 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
 
   return pdfMake.createPdf(docDefinition);
 };
+
+
+export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
+  const content: Record<string, unknown>[] = [];
+
+  const totalMlCalculado = pacotes.reduce((acc, p) => acc + (Number(p.total_ml) || 0), 0);
+  const totalM3Calculado = pacotes.reduce((acc, p) => acc + (Number(p.total_m3) || 0), 0);
+  const totalPecasGeral = pacotes.reduce((acc, p) => {
+    return acc + (p.itens?.reduce((itAcc: number, it: any) => itAcc + (Number(it.quantidade) || 0), 0) || 0);
+  }, 0);
+
+  const temEspecieNosPacotes = pacotes.some(p => p.especie);
+  const especiesDistintas = temEspecieNosPacotes
+    ? Array.from(new Set(pacotes.map(p => p.especie).filter(Boolean))).join(', ')
+    : (romaneio.especie || 'Sem espécie');
+
+  const resumos = calcularResumosConsolidados(pacotes, romaneio.tipo_romaneio);
+
+  const tipoNome =
+    romaneio.tipo_romaneio === 'pes'
+      ? 'Ipê / Exportação (Pés)'
+      : romaneio.tipo_romaneio === 'aberta'
+      ? 'Bica Corrida (Largura Aberta)'
+      : 'Padrão (Larguras Fixas)';
+
+  // Cabeçalho Principal
+  content.push({
+    columns: [
+      {
+        stack: [
+          { text: 'MT PRO MADEIRAS', fontSize: 18, bold: true, color: '#059669' },
+          { text: 'RESUMO CONSOLIDADO DO ROMANEIO', fontSize: 11, bold: true, color: '#374151', margin: [0, 2, 0, 0] }
+        ]
+      },
+      {
+        stack: [
+          { text: `Romaneio Nº: ${romaneio.id.toString().padStart(5, '0')}`, fontSize: 14, bold: true, alignment: 'right', color: '#1f2937' },
+          { text: `Tipo: ${tipoNome}`, fontSize: 9, bold: true, alignment: 'right', color: '#6b7280', margin: [0, 2, 0, 0] }
+        ]
+      }
+    ]
+  });
+
+  content.push({
+    canvas: [{ type: 'line', x1: 0, y1: 6, x2: 515, y2: 6, lineWidth: 1.5, lineColor: '#059669' }],
+    margin: [0, 0, 0, 10]
+  });
+
+  // Dados Gerais
+  content.push({
+    table: {
+      widths: ['*', '*', '*'],
+      body: [
+        [
+          { text: 'Cliente', bold: true, fontSize: 9, color: '#6b7280', border: [false, false, false, false] },
+          { text: 'Espécie(s)', bold: true, fontSize: 9, color: '#6b7280', border: [false, false, false, false] },
+          { text: 'Data', bold: true, fontSize: 9, color: '#6b7280', border: [false, false, false, false] }
+        ],
+        [
+          { text: romaneio.cliente, fontSize: 11, bold: true, border: [false, false, false, false] },
+          { text: especiesDistintas, fontSize: 11, bold: true, border: [false, false, false, false] },
+          { text: new Date(romaneio.data).toLocaleDateString('pt-BR'), fontSize: 11, bold: true, border: [false, false, false, false] }
+        ]
+      ]
+    },
+    margin: [0, 0, 0, 10],
+    layout: {
+      defaultBorder: false,
+      paddingTop: () => 1,
+      paddingBottom: () => 1
+    }
+  });
+
+  // Caixa de Indicadores / Totais Gerais
+  content.push({
+    table: {
+      widths: ['*', '*', '*', '*'],
+      body: [
+        [
+          { text: 'TOTAL DE PACOTES', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
+          { text: 'TOTAL DE PEÇAS', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
+          { text: 'METROS LINEARES (ML)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
+          { text: 'VOLUME TOTAL (M³)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#ecfdf5', color: '#047857' }
+        ],
+        [
+          { text: `${pacotes.length} pct`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
+          { text: `${totalPecasGeral} un`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
+          { text: totalMlCalculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
+          { text: totalM3Calculado.toFixed(3).replace('.', ','), fontSize: 13, bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' }
+        ]
+      ]
+    },
+    margin: [0, 0, 0, 15],
+    layout: {
+      hLineWidth: () => 1,
+      vLineWidth: () => 1,
+      hLineColor: () => '#e2e8f0',
+      vLineColor: () => '#e2e8f0'
+    }
+  });
+
+  // Tabela por Espécie
+  const bodyEspecie: Record<string, unknown>[][] = [
+    [
+      { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Peças', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
+    ]
+  ];
+
+  resumos.porEspecie.forEach(item => {
+    bodyEspecie.push([
+      { text: item.especie, bold: true, alignment: 'left' },
+      { text: item.totalPecas.toString(), alignment: 'center' },
+      { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
+      { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
+      { text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true }
+    ]);
+  });
+
+  content.push({
+    text: '1. Consolidado por Espécie',
+    fontSize: 11,
+    bold: true,
+    color: '#1f2937',
+    margin: [0, 5, 0, 4]
+  });
+
+  content.push({
+    table: {
+      headerRows: 1,
+      widths: ['*', 'auto', 'auto', 'auto', 'auto'],
+      body: bodyEspecie
+    },
+    layout: 'lightHorizontalLines',
+    margin: [0, 0, 0, 14]
+  });
+
+  // Tabela por Categoria de Comprimento
+  const percentLonga = resumos.totalVolumeGeral > 0 ? (resumos.totalMadeiraLongaM3 / resumos.totalVolumeGeral) * 100 : 0;
+  const percentShort = resumos.totalVolumeGeral > 0 ? (resumos.totalShortM3 / resumos.totalVolumeGeral) * 100 : 0;
+  const percentAbaixo6 = resumos.totalVolumeGeral > 0 ? (resumos.totalAbaixo6M3 / resumos.totalVolumeGeral) * 100 : 0;
+  const percent7 = resumos.totalVolumeGeral > 0 ? (resumos.total7M3 / resumos.totalVolumeGeral) * 100 : 0;
+  const percentAcima8 = resumos.totalVolumeGeral > 0 ? (resumos.totalAcima8M3 / resumos.totalVolumeGeral) * 100 : 0;
+
+  const bodyCategoria: Record<string, unknown>[][] = [
+    [
+      { text: 'Categoria de Comprimento', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Volume M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
+    ]
+  ];
+
+  if (romaneio.tipo_romaneio === 'pes') {
+    bodyCategoria.push(
+      [
+        { text: '6 PÉS E ABAIXO', bold: true, alignment: 'left' },
+        { text: resumos.totalAbaixo6M3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#b91c1c', fillColor: '#fef2f2' },
+        { text: `${percentAbaixo6.toFixed(1)}%`, alignment: 'center', bold: true }
+      ],
+      [
+        { text: '7 PÉS', bold: true, alignment: 'left' },
+        { text: resumos.total7M3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#d97706', fillColor: '#fffbeb' },
+        { text: `${percent7.toFixed(1)}%`, alignment: 'center', bold: true }
+      ],
+      [
+        { text: '8 PÉS E ACIMA', bold: true, alignment: 'left' },
+        { text: resumos.totalAcima8M3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
+        { text: `${percentAcima8.toFixed(1)}%`, alignment: 'center', bold: true }
+      ]
+    );
+  } else {
+    bodyCategoria.push(
+      [
+        { text: 'MADEIRA LONGA (>= 2,00 m)', bold: true, alignment: 'left' },
+        { text: resumos.totalMadeiraLongaM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
+        { text: `${percentLonga.toFixed(1)}%`, alignment: 'center', bold: true }
+      ],
+      [
+        { text: 'SHORT (<= 1,90 m)', bold: true, alignment: 'left' },
+        { text: resumos.totalShortM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#b91c1c', fillColor: '#fef2f2' },
+        { text: `${percentShort.toFixed(1)}%`, alignment: 'center', bold: true }
+      ]
+    );
+  }
+
+  content.push({
+    text: '2. Consolidado por Categoria de Comprimento',
+    fontSize: 11,
+    bold: true,
+    color: '#1f2937',
+    margin: [0, 5, 0, 4]
+  });
+
+  content.push({
+    table: {
+      headerRows: 1,
+      widths: ['*', 'auto', 'auto'],
+      body: bodyCategoria
+    },
+    layout: 'lightHorizontalLines',
+    margin: [0, 0, 0, 14]
+  });
+
+  // Tabela por Bitola ou Largura
+  if (romaneio.tipo_romaneio === 'padrao' || romaneio.tipo_romaneio === 'aberta') {
+    const bodyBitola: Record<string, unknown>[][] = [
+      [
+        { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: 'Bitola (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: 'Peças', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
+      ]
+    ];
+
+    resumos.porBitola.forEach(item => {
+      bodyBitola.push([
+        { text: item.especie, alignment: 'left' },
+        { text: `${item.espessura.toString().replace('.', ',')} x ${item.largura.toString().replace('.', ',')}`, bold: true, alignment: 'center' },
+        { text: item.totalPecas.toString(), alignment: 'center' },
+        { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
+        { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
+        { text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true }
+      ]);
+    });
+
+    content.push({
+      text: '3. Consolidado por Bitola (Seção)',
+      fontSize: 11,
+      bold: true,
+      color: '#1f2937',
+      margin: [0, 5, 0, 4]
+    });
+
+    content.push({
+      table: {
+        headerRows: 1,
+        widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+        body: bodyBitola
+      },
+      layout: 'lightHorizontalLines',
+      margin: [0, 0, 0, 14]
+    });
+  } else if (romaneio.tipo_romaneio === 'pes') {
+    const bodyLargura: Record<string, unknown>[][] = [
+      [
+        { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: 'Largura (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
+      ]
+    ];
+
+    resumos.porLargura.forEach(item => {
+      bodyLargura.push([
+        { text: item.especie, alignment: 'left' },
+        { text: `${item.largura.toString().replace('.', ',')} cm`, bold: true, alignment: 'center' },
+        { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
+        { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
+        { text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true }
+      ]);
+    });
+
+    content.push({
+      text: '3. Consolidado por Largura',
+      fontSize: 11,
+      bold: true,
+      color: '#1f2937',
+      margin: [0, 5, 0, 4]
+    });
+
+    content.push({
+      table: {
+        headerRows: 1,
+        widths: ['*', 'auto', 'auto', 'auto', 'auto'],
+        body: bodyLargura
+      },
+      layout: 'lightHorizontalLines',
+      margin: [0, 0, 0, 14]
+    });
+  }
+
+  // Assinaturas
+  content.push({
+    margin: [0, 35, 0, 0],
+    columns: [
+      {
+        stack: [
+          { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 1 }] },
+          { text: 'Assinatura da Empresa', alignment: 'center', marginTop: 5, fontSize: 9 }
+        ],
+        alignment: 'center'
+      },
+      {
+        stack: [
+          { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 1 }] },
+          { text: 'Assinatura do Motorista/Cliente', alignment: 'center', marginTop: 5, fontSize: 9 }
+        ],
+        alignment: 'center'
+      }
+    ]
+  });
+
+  const docDefinition: any = {
+    pageSize: 'A4',
+    pageMargins: [40, 35, 40, 35],
+    content,
+    defaultStyle: {
+      font: 'Roboto',
+      fontSize: 9,
+      color: '#374151'
+    }
+  };
+
+  return pdfMake.createPdf(docDefinition);
+};

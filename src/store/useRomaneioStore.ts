@@ -27,6 +27,7 @@ export interface RomaneioPacote {
 }
 
 interface RomaneioState {
+  isEditing: boolean;
   tipoRomaneio: 'padrao' | 'aberta' | 'pes';
   cliente: string;
   data: string;
@@ -50,6 +51,7 @@ interface RomaneioState {
   addItem: (pacoteId: string) => void;
   removeItem: (pacoteId: string, itemId: string) => void;
   updateItem: (pacoteId: string, itemId: string, field: keyof RomaneioItem, value: string | number) => void;
+  updateItemFields: (pacoteId: string, itemId: string, fields: Partial<RomaneioItem>) => void;
   duplicateItem: (pacoteId: string, itemId: string) => void;
 
   loadRomaneio: (dados: {
@@ -79,6 +81,7 @@ interface RomaneioState {
 const generateId = () => Math.random().toString(36).substring(2, 11);
 
 export const useRomaneioStore = create<RomaneioState>((set, get) => ({
+  isEditing: false,
   tipoRomaneio: 'padrao',
   cliente: '',
   data: getLocalDateString(),
@@ -112,7 +115,6 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
     set((state) => {
       const lastPacote = state.pacotes[state.pacotes.length - 1];
 
-      // Verificar se o último pacote está minimamente preenchido
       if (lastPacote) {
         const temEspecie = lastPacote.especie && lastPacote.especie.trim().length > 0;
         const temLinhaCompleta = lastPacote.itens.some(
@@ -199,7 +201,6 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
     const novosItens: RomaneioItem[] = [];
 
     for (const linha of linhas) {
-      // Divide por Tabulação (Excel padrão) ou ponto-e-vírgula/vírgula
       const colunas = linha.split(/\t|;/).map((c) => c.trim().replace(',', '.'));
       if (colunas.length === 0 || !colunas.some((c) => c !== '')) continue;
 
@@ -209,8 +210,6 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
       let qtd: number | '' = '';
 
       if (colunas.length >= 4) {
-        // [Espessura, Comprimento, Largura, Qtd] ou [Espessura, Largura, Comprimento, Qtd]
-        // Se a 2ª coluna for maior que a 3ª e >= 1, normalmente é comprimento
         const col0 = Number(colunas[0]);
         const col1 = Number(colunas[1]);
         const col2 = Number(colunas[2]);
@@ -226,27 +225,39 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
         }
         qtd = !isNaN(col3) && col3 > 0 ? col3 : 1;
       } else if (colunas.length === 3) {
-        // [Espessura, Comprimento, Largura]
         const col0 = Number(colunas[0]);
         const col1 = Number(colunas[1]);
         const col2 = Number(colunas[2]);
+
         esp = !isNaN(col0) && col0 > 0 ? col0 : '';
-        comp = !isNaN(col1) && col1 > 0 ? col1 : '';
-        larg = !isNaN(col2) && col2 > 0 ? col2 : colunas[2];
+        if (col1 > col2) {
+          comp = !isNaN(col1) && col1 > 0 ? col1 : '';
+          larg = !isNaN(col2) && col2 > 0 ? col2 : colunas[2];
+        } else {
+          larg = !isNaN(col1) && col1 > 0 ? col1 : colunas[1];
+          comp = !isNaN(col2) && col2 > 0 ? col2 : '';
+        }
         qtd = 1;
+      } else if (colunas.length === 2) {
+        const col0 = Number(colunas[0]);
+        const col1 = Number(colunas[1]);
+        larg = !isNaN(col0) && col0 > 0 ? col0 : colunas[0];
+        qtd = !isNaN(col1) && col1 > 0 ? col1 : 1;
       } else if (colunas.length === 1) {
-        // Apenas Larguras consecutivas
-        larg = colunas[0];
+        const col0 = Number(colunas[0]);
+        larg = !isNaN(col0) && col0 > 0 ? col0 : colunas[0];
         qtd = 1;
       }
 
-      novosItens.push({
-        id: generateId(),
-        espessura: esp,
-        largura: larg,
-        comprimento: comp,
-        quantidade: qtd
-      });
+      if (esp !== '' || larg !== '' || comp !== '') {
+        novosItens.push({
+          id: generateId(),
+          espessura: esp,
+          largura: larg,
+          comprimento: comp,
+          quantidade: qtd
+        });
+      }
     }
 
     if (novosItens.length === 0) return 0;
@@ -254,17 +265,17 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
     set((state) => ({
       pacotes: state.pacotes.map((p) => {
         if (p.id === pacoteId) {
-          // Se o pacote só tiver 1 linha em branco inicial, substitui
-          const isInicialVazia =
-            p.itens.length === 1 &&
-            p.itens[0].espessura === '' &&
-            p.itens[0].largura === '' &&
-            p.itens[0].comprimento === '' &&
-            p.itens[0].quantidade === '';
+          const itensAtuais = p.itens;
+          const temApenasVazio =
+            itensAtuais.length === 1 &&
+            itensAtuais[0].espessura === '' &&
+            itensAtuais[0].largura === '' &&
+            itensAtuais[0].comprimento === '' &&
+            itensAtuais[0].quantidade === '';
 
           return {
             ...p,
-            itens: isInicialVazia ? novosItens : [...p.itens, ...novosItens]
+            itens: temApenasVazio ? novosItens : [...itensAtuais, ...novosItens]
           };
         }
         return p;
@@ -306,7 +317,7 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
         id: generateId(),
         espessura: lastItem ? lastItem.espessura : '',
         largura: '',
-        comprimento: lastItem ? lastItem.comprimento : '',
+        comprimento: '',
         quantidade: ''
       };
       const newPacotes = [...state.pacotes];
@@ -376,8 +387,40 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
     get().salvarRascunho();
   },
 
+  updateItemFields: (pacoteId, itemId, fields) => {
+    set((state) => {
+      const pIdx = state.pacotes.findIndex((p) => p.id === pacoteId);
+      if (pIdx === -1) return state;
+      const p = state.pacotes[pIdx];
+      const iIdx = p.itens.findIndex((i) => i.id === itemId);
+      if (iIdx === -1) return state;
+
+      const currentItem = p.itens[iIdx];
+      let changed = false;
+      for (const key of Object.keys(fields) as (keyof RomaneioItem)[]) {
+        if (currentItem[key] !== fields[key]) {
+          changed = true;
+          break;
+        }
+      }
+      if (!changed) return state;
+
+      const newItens = [...p.itens];
+      newItens[iIdx] = { ...currentItem, ...fields };
+      const newPacotes = [...state.pacotes];
+      newPacotes[pIdx] = { ...p, itens: newItens };
+      return { pacotes: newPacotes };
+    });
+    get().salvarRascunho();
+  },
+
   resetForm: () => {
+    if (draftTimeout) {
+      clearTimeout(draftTimeout);
+      draftTimeout = null;
+    }
     set({
+      isEditing: false,
       tipoRomaneio: 'padrao',
       cliente: '',
       data: getLocalDateString(),
@@ -392,8 +435,13 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
     });
   },
 
-  loadRomaneio: (dados) =>
+  loadRomaneio: (dados) => {
+    if (draftTimeout) {
+      clearTimeout(draftTimeout);
+      draftTimeout = null;
+    }
     set({
+      isEditing: true,
       tipoRomaneio: dados.tipoRomaneio || 'padrao',
       cliente: dados.cliente,
       data: dados.data,
@@ -445,7 +493,6 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
           }
         });
 
-        // Ordenar itens por espessura/comprimento decrescente para manter a bitola organizada
         itensAgrupados.sort((a, b) => {
           const espA = Number(a.espessura) || 0;
           const espB = Number(b.espessura) || 0;
@@ -466,20 +513,33 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
               : [{ id: generateId(), espessura: '', largura: '', comprimento: '', quantidade: '' }]
         };
       })
-    }),
+    });
+  },
 
-  // Autosave / Rascunhos com Debounce de 600ms (não bloqueia a digitação no grid)
   salvarRascunho: () => {
-    if (draftTimeout) clearTimeout(draftTimeout);
+    if (get().isEditing) {
+      return;
+    }
+    if (draftTimeout) {
+      clearTimeout(draftTimeout);
+      draftTimeout = null;
+    }
     draftTimeout = setTimeout(() => {
       try {
         const state = get();
+        if (state.isEditing) return;
+
         const temDados =
           state.cliente.trim().length > 0 ||
           state.pacotes.some(
             (p) =>
               (p.especie && p.especie.trim().length > 0) ||
-              p.itens.some((i) => i.espessura !== '' || i.largura !== '' || i.comprimento !== '')
+              p.itens.some(
+                (i) =>
+                  (i.espessura !== '' && Number(i.espessura) > 0) ||
+                  (i.largura !== '' && String(i.largura).trim() !== '') ||
+                  (i.comprimento !== '' && Number(i.comprimento) > 0)
+              )
           );
 
         if (temDados) {
@@ -491,6 +551,8 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
             updatedAt: new Date().toISOString()
           };
           localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+        } else {
+          localStorage.removeItem(DRAFT_KEY);
         }
       } catch {
         // Ignora erro de localStorage
@@ -504,7 +566,12 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
       if (!raw) return false;
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.pacotes) && parsed.pacotes.length > 0) {
+        if (draftTimeout) {
+          clearTimeout(draftTimeout);
+          draftTimeout = null;
+        }
         set({
+          isEditing: false,
           tipoRomaneio: parsed.tipoRomaneio || 'padrao',
           cliente: parsed.cliente || '',
           data: parsed.data || getLocalDateString(),
@@ -519,6 +586,10 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
   },
 
   limparRascunho: () => {
+    if (draftTimeout) {
+      clearTimeout(draftTimeout);
+      draftTimeout = null;
+    }
     try {
       localStorage.removeItem(DRAFT_KEY);
     } catch {
@@ -537,7 +608,12 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
           parsed.pacotes?.some(
             (p: any) =>
               p.especie?.trim() ||
-              p.itens?.some((i: any) => i.espessura !== '' || i.largura !== '' || i.comprimento !== '')
+              p.itens?.some(
+                (i: any) =>
+                  (i.espessura !== '' && Number(i.espessura) > 0) ||
+                  (i.largura !== '' && String(i.largura).trim() !== '') ||
+                  (i.comprimento !== '' && Number(i.comprimento) > 0)
+              )
           ))
       );
     } catch {
