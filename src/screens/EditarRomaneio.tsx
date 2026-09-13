@@ -155,7 +155,7 @@ export default function EditarRomaneio() {
   useEffect(() => {
     const buscarEspecies = async () => {
       try {
-        const res = await window.electronAPI.queryDB('SELECT * FROM especies ORDER BY nome');
+        const res = await window.electronAPI.getEspecies();
         if (res.success && res.data) setEspeciesList(res.data);
       } catch (err) {
         console.error('Erro ao buscar espécies', err);
@@ -170,58 +170,19 @@ export default function EditarRomaneio() {
       if (!id) return;
       setCarregando(true);
       try {
-        const resRomaneio = await window.electronAPI.queryDB(
-          `SELECT r.id, r.data, COALESCE(c.nome, '') as cliente, r.total_m3, r.total_ml, r.tipo_romaneio 
-           FROM romaneios r 
-           LEFT JOIN clientes c ON r.cliente_id = c.id 
-           WHERE r.id = ?`,
-          [Number(id)]
-        );
+        const res = await window.electronAPI.getRomaneioById(Number(id));
 
-        if (!resRomaneio.success || !resRomaneio.data || resRomaneio.data.length === 0) {
-          throw new Error('Romaneio não encontrado');
+        if (!res.success || !res.data) {
+          throw new Error(res.error || 'Romaneio não encontrado');
         }
 
-        const romaneioData = resRomaneio.data[0] as any;
-
-        const resPacotes = await window.electronAPI.queryDB(
-          `SELECT rp.*, COALESCE(e.nome, e_glob.nome, '') as especie 
-           FROM romaneio_pacotes rp 
-           LEFT JOIN especies e ON rp.especie_id = e.id 
-           LEFT JOIN romaneios r ON rp.romaneio_id = r.id 
-           LEFT JOIN especies e_glob ON r.especie_id = e_glob.id 
-           WHERE rp.romaneio_id = ? 
-           ORDER BY rp.numero_pacote ASC`,
-          [Number(id)]
-        );
-
-        const pacotesBD = resPacotes.success && resPacotes.data ? resPacotes.data : [];
-
-        if (pacotesBD.length > 0) {
-          const pacoteIds = pacotesBD.map((p: any) => p.id);
-          const placeholders = pacoteIds.map(() => '?').join(',');
-          const resItens = await window.electronAPI.queryDB(
-            `SELECT * FROM romaneio_itens WHERE pacote_id IN (${placeholders}) ORDER BY id ASC`,
-            pacoteIds
-          );
-
-          const itensMap = new Map<any, any[]>();
-          (resItens.data || []).forEach((item: any) => {
-            const list = itensMap.get(item.pacote_id) || [];
-            list.push(item);
-            itensMap.set(item.pacote_id, list);
-          });
-
-          for (const pacote of pacotesBD) {
-            pacote.itens = itensMap.get(pacote.id) || [];
-          }
-        }
+        const romaneioData = res.data;
 
         loadRomaneio({
           cliente: String(romaneioData.cliente || ''),
           data: String(romaneioData.data || ''),
           tipoRomaneio: (romaneioData.tipo_romaneio as 'padrao' | 'aberta' | 'pes') || 'padrao',
-          pacotes: pacotesBD
+          pacotes: romaneioData.pacotes || []
         });
       } catch (err: any) {
         console.error(err);
@@ -478,11 +439,11 @@ export default function EditarRomaneio() {
   // Atalhos globais
   useEffect(() => {
     const handleKeyDownGlobal = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         salvarEdicao();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      if (e.key === 'F2' || ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'b' || e.key === 'Enter'))) {
         e.preventDefault();
         handleAddPacote();
       }
@@ -514,7 +475,7 @@ export default function EditarRomaneio() {
 
   return (
     <>
-      <div className="space-y-6 max-w-7xl mx-auto pb-24">
+      <div className="w-full mx-auto space-y-8 pb-32 page-transition">
         {/* Top Navigation & Header Card */}
         <div className="glass-card p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
           <div className="space-y-2 relative">

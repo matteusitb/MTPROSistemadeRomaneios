@@ -42,17 +42,74 @@ export interface DbInfo {
   pacotesCount: number;
 }
 
+export interface RomaneioListItem {
+  id: number;
+  data: string;
+  cliente?: string;
+  especie?: string;
+  total_m3: number;
+  total_ml: number;
+  tipo_romaneio?: string;
+}
+
+export interface RomaneioDetail extends RomaneioData {
+  id: number;
+  cliente_id?: number;
+  especie_id?: number;
+}
+
+export interface EspecieItem {
+  id: number;
+  nome: string;
+  cientifico?: string | null;
+}
+
+export interface LocalLicenseRecord {
+  id: string;
+  email: string;
+  machine_id: string;
+  status_licenca: string;
+  data_validade?: string | null;
+  senha_hash: string;
+  salt: string;
+  ultimo_login?: string | null;
+}
+
 export interface ElectronAPI {
-  // DB Core
-  queryDB: <T = Record<string, unknown>>(query: string, params?: unknown[]) => Promise<{ success: boolean; data?: T[]; error?: string }>;
-  executeDB: (query: string, params?: unknown[]) => Promise<{ success: boolean; error?: string }>;
+  // Romaneios & Operações de Banco
+  getRomaneios: () => Promise<{ success: boolean; data?: RomaneioListItem[]; error?: string }>;
+  getRomaneioById: (id: number) => Promise<{ success: boolean; data?: RomaneioDetail; error?: string }>;
+  deleteRomaneio: (id: number) => Promise<{ success: boolean; error?: string }>;
   saveRomaneio: (data: RomaneioData) => Promise<{ success: boolean; id?: number; error?: string }>;
   updateRomaneio: (data: RomaneioData & { id: number }) => Promise<{ success: boolean; id?: number; error?: string }>;
+  getEspecies: () => Promise<{ success: boolean; data?: EspecieItem[]; error?: string }>;
 
-  // Backup
-  backupDB: (destPath?: string) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>;
-  restoreDB: (filePath?: string) => Promise<{
+  // Autenticação Offline / Licença Local
+  saveLocalLicense: (data: {
+    id: string;
+    email: string;
+    machine_id: string;
+    status_licenca: string;
+    data_validade?: string | null;
+    senha_hash: string;
+    salt: string;
+    ultimo_login?: string;
+  }) => Promise<{ success: boolean; error?: string }>;
+  getLocalLicense: (email: string) => Promise<{ success: boolean; data?: LocalLicenseRecord[]; error?: string }>;
+  updateLocalLicenseLastLogin: (id: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Backup e Restauração (com suporte a criptografia/senha)
+  backupDB: (destPath?: string, password?: string) => Promise<{
     success: boolean;
+    path?: string;
+    encrypted?: boolean;
+    canceled?: boolean;
+    error?: string;
+  }>;
+  restoreDB: (filePath?: string, password?: string) => Promise<{
+    success: boolean;
+    requiresPassword?: boolean;
+    invalidPassword?: boolean;
     canceled?: boolean;
     error?: string;
     path?: string;
@@ -98,7 +155,14 @@ export interface ElectronAPI {
   onUpdateDownloaded: (callback: () => void) => () => void;
 
   // Ativação e Anti-Clonagem
-  checkActivationStatus: () => Promise<{ ativado: boolean; motivo: 'unactivated' | 'expired' | 'fraud' | 'ok' }>;
+  checkActivationStatus: () => Promise<{
+    ativado: boolean;
+    motivo: 'unactivated' | 'expired' | 'fraud' | 'ok';
+    isTrial?: boolean;
+    diasRestantes?: number;
+    validade?: string;
+    hardwareId?: string;
+  }>;
   ativarSistema: (chave: string) => Promise<{ success: boolean; validade?: string; error?: string }>;
 
   // Compartilhamento & Arquivos (WhatsApp)

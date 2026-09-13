@@ -1,15 +1,22 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // DB Core
-  queryDB: (query, params) => ipcRenderer.invoke('db-query', query, params),
-  executeDB: (query, params) => ipcRenderer.invoke('db-execute', query, params),
+  // Romaneios & Operações de Banco
+  getRomaneios: () => ipcRenderer.invoke('get-romaneios'),
+  getRomaneioById: (id) => ipcRenderer.invoke('get-romaneio-by-id', id),
+  deleteRomaneio: (id) => ipcRenderer.invoke('delete-romaneio', id),
   saveRomaneio: (data) => ipcRenderer.invoke('save-romaneio', data),
   updateRomaneio: (data) => ipcRenderer.invoke('update-romaneio', data),
+  getEspecies: () => ipcRenderer.invoke('get-especies'),
 
-  // Backup e Configurações
-  backupDB: (destPath) => ipcRenderer.invoke('backup-db', destPath),
-  restoreDB: (filePath) => ipcRenderer.invoke('restore-db', filePath),
+  // Autenticação Offline / Licença Local
+  saveLocalLicense: (data) => ipcRenderer.invoke('save-local-license', data),
+  getLocalLicense: (email) => ipcRenderer.invoke('get-local-license', email),
+  updateLocalLicenseLastLogin: (id) => ipcRenderer.invoke('update-local-license-last-login', id),
+
+  // Backup e Configurações (com suporte a criptografia/senha)
+  backupDB: (destPath, password) => ipcRenderer.invoke('backup-db', destPath, password),
+  restoreDB: (filePath, password) => ipcRenderer.invoke('restore-db', filePath, password),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   openBackupFolder: (folderPath) => ipcRenderer.invoke('open-backup-folder', folderPath),
   getDbInfo: () => ipcRenderer.invoke('get-db-info'),

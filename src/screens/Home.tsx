@@ -65,21 +65,7 @@ export default function Home() {
   const carregarRomaneios = async () => {
     setLoading(true);
     try {
-      const result = await window.electronAPI.queryDB(`
-        SELECT r.id, r.data, c.nome as cliente, 
-               COALESCE(
-                 (SELECT GROUP_CONCAT(DISTINCT esp.nome) 
-                  FROM romaneio_pacotes pack 
-                  LEFT JOIN especies esp ON pack.especie_id = esp.id 
-                  WHERE pack.romaneio_id = r.id AND pack.especie_id IS NOT NULL),
-                 e_old.nome
-               ) as especie,
-               r.total_m3, r.total_ml, r.tipo_romaneio 
-        FROM romaneios r 
-        LEFT JOIN clientes c ON r.cliente_id = c.id 
-        LEFT JOIN especies e_old ON r.especie_id = e_old.id
-        ORDER BY r.id DESC
-      `);
+      const result = await window.electronAPI.getRomaneios();
       if (result.success && result.data) {
         setRomaneios(result.data);
       }
@@ -99,22 +85,9 @@ export default function Home() {
         didOpen: () => { Swal.showLoading(); }
       });
 
-      const pResult = await window.electronAPI.queryDB(`
-        SELECT rp.*, e.nome as especie
-        FROM romaneio_pacotes rp
-        LEFT JOIN especies e ON rp.especie_id = e.id
-        WHERE rp.romaneio_id = ?
-        ORDER BY rp.numero_pacote
-      `, [romaneio.id]);
-
-      if (!pResult.success) throw new Error('Erro ao buscar pacotes');
-      const pacotes = pResult.data || [];
-
-      for (const pacote of pacotes) {
-        const iResult = await window.electronAPI.queryDB('SELECT * FROM romaneio_itens WHERE pacote_id = ?', [pacote.id]);
-        if (!iResult.success) throw new Error('Erro ao buscar itens');
-        pacote.itens = iResult.data || [];
-      }
+      const res = await window.electronAPI.getRomaneioById(romaneio.id);
+      if (!res.success || !res.data) throw new Error(res.error || 'Erro ao buscar romaneio');
+      const pacotes = res.data.pacotes || [];
 
       Swal.close();
 
@@ -126,15 +99,15 @@ export default function Home() {
           </p>
           <div class="flex gap-2 mb-4">
             <button id="swal-select-all" type="button" class="text-[10px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 px-3 py-1.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 transition-all cursor-pointer">Selecionar Todos</button>
-            <button id="swal-deselect-all" type="button" class="text-[10px] font-black text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750 transition-all cursor-pointer">Desmarcar Todos</button>
+            <button id="swal-deselect-all" type="button" class="text-[10px] font-black text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer">Desmarcar Todos</button>
           </div>
-          <div class="max-h-60 overflow-y-auto border border-slate-100 dark:border-slate-800 rounded-xl p-3 bg-slate-50/50 dark:bg-slate-950/25 space-y-2 text-left">
-            ${pacotes.map(p => `
-              <label class="flex items-center gap-3 p-2 hover:bg-white dark:hover:bg-slate-900 rounded-lg cursor-pointer transition-colors">
-                <input type="checkbox" name="swal-pacote-check" value="${p.id}" checked class="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300" />
-                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-350">
-                  <span class="text-slate-900 dark:text-white font-extrabold">Pacote Nº ${p.numero_pacote}</span> - ${p.especie || 'Mista'} 
-                  <span class="text-emerald-600 dark:text-emerald-450 ml-1">(${Number(p.total_m3).toFixed(3)} m³)</span>
+          <div id="swal-pacotes-list" class="max-h-60 overflow-y-auto space-y-2 text-left pr-1">
+            ${pacotes.map((p: any) => `
+              <label class="flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800/80 cursor-pointer transition-colors">
+                <input type="checkbox" value="${p.id}" checked class="swal-pkg-cb w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer" />
+                <div class="flex-1 flex justify-between items-center text-xs">
+                  <span class="font-bold text-slate-800 dark:text-slate-200">Pacote #${String(p.numero_pacote).padStart(2, '0')} (${p.especie || 'Sem Espécie'})</span>
+                  <span class="font-mono text-[11px] text-slate-500 dark:text-slate-400">${p.total_m3.toFixed(3)} m³ | ${p.itens?.length || 0} itens</span>
                 </div>
               </label>
             `).join('')}
@@ -143,34 +116,30 @@ export default function Home() {
         showCancelButton: true,
         confirmButtonText: 'Gerar PDF',
         cancelButtonText: 'Cancelar',
-        confirmButtonColor: '#10b981',
-        cancelButtonColor: '#64748b',
+        confirmButtonColor: '#059669',
+        cancelButtonColor: '#94a3b8',
         customClass: {
-          popup: 'rounded-3xl p-6 font-sans border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 max-w-sm',
+          popup: 'rounded-3xl p-6 font-sans border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950',
           title: 'text-xl font-black text-slate-800 dark:text-white tracking-tight',
-          confirmButton: 'rounded-xl font-bold px-5 py-2.5 shadow-sm text-sm cursor-pointer',
-          cancelButton: 'rounded-xl font-bold px-5 py-2.5 text-sm cursor-pointer'
+          confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-md text-sm cursor-pointer',
+          cancelButton: 'rounded-xl font-bold px-6 py-2.5 text-sm cursor-pointer'
         },
         didOpen: () => {
-          const popup = Swal.getPopup();
-          if (popup) {
-            popup.querySelector('#swal-select-all')?.addEventListener('click', () => {
-              popup.querySelectorAll('input[name="swal-pacote-check"]').forEach((cb) => {
-                (cb as HTMLInputElement).checked = true;
-              });
-            });
-            popup.querySelector('#swal-deselect-all')?.addEventListener('click', () => {
-              popup.querySelectorAll('input[name="swal-pacote-check"]').forEach((cb) => {
-                (cb as HTMLInputElement).checked = false;
-              });
-            });
-          }
+          const selectAllBtn = document.getElementById('swal-select-all');
+          const deselectAllBtn = document.getElementById('swal-deselect-all');
+          const checkboxes = document.querySelectorAll<HTMLInputElement>('.swal-pkg-cb');
+
+          selectAllBtn?.addEventListener('click', () => {
+            checkboxes.forEach(cb => cb.checked = true);
+          });
+          deselectAllBtn?.addEventListener('click', () => {
+            checkboxes.forEach(cb => cb.checked = false);
+          });
         },
         preConfirm: () => {
-          const checked = Array.from(Swal.getPopup()!.querySelectorAll('input[name="swal-pacote-check"]:checked'))
-            .map(el => (el as HTMLInputElement).value);
+          const checked = Array.from(document.querySelectorAll<HTMLInputElement>('.swal-pkg-cb:checked')).map(cb => Number(cb.value));
           if (checked.length === 0) {
-            Swal.showValidationMessage('Selecione pelo menos um pacote!');
+            Swal.showValidationMessage('Selecione pelo menos um pacote para gerar o PDF.');
             return false;
           }
           return checked;
@@ -179,11 +148,23 @@ export default function Home() {
 
       if (!pacotesSelecionados) return;
 
-      const pacotesFiltrados = pacotes.filter(p => pacotesSelecionados.includes(String(p.id)));
+      const pacotesFiltrados = pacotes.filter((p: any) => pacotesSelecionados.includes(p.id));
 
       const pdfDoc = gerarPdfRomaneio(romaneio, pacotesFiltrados);
       pdfDoc.download(`Romaneio_${romaneio.id.toString().padStart(4, '0')}.pdf`);
-    } catch {
+
+      Swal.fire({
+        icon: 'success',
+        title: 'PDF Gerado!',
+        text: 'O arquivo foi gerado e baixado com sucesso.',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      });
+
+    } catch (error) {
+      console.error('Erro ao gerar relatório', error);
       Swal.fire({
         icon: 'error',
         title: 'Erro',
@@ -202,36 +183,9 @@ export default function Home() {
         didOpen: () => { Swal.showLoading(); }
       });
 
-      const pResult = await window.electronAPI.queryDB(`
-        SELECT rp.*, COALESCE(e.nome, e_glob.nome) as especie
-        FROM romaneio_pacotes rp
-        LEFT JOIN especies e ON rp.especie_id = e.id
-        LEFT JOIN romaneios r ON rp.romaneio_id = r.id
-        LEFT JOIN especies e_glob ON r.especie_id = e_glob.id
-        WHERE rp.romaneio_id = ?
-        ORDER BY rp.numero_pacote
-      `, [romaneio.id]);
-
-      if (!pResult.success) throw new Error('Erro ao buscar pacotes');
-      const pacotes = pResult.data || [];
-
-      if (pacotes.length > 0) {
-        const pacoteIds = pacotes.map((p: any) => p.id);
-        const placeholders = pacoteIds.map(() => '?').join(',');
-        const iResult = await window.electronAPI.queryDB(
-          `SELECT * FROM romaneio_itens WHERE pacote_id IN (${placeholders}) ORDER BY id`,
-          pacoteIds
-        );
-        const itensMap = new Map<any, any[]>();
-        (iResult.data || []).forEach((item: any) => {
-          const list = itensMap.get(item.pacote_id) || [];
-          list.push(item);
-          itensMap.set(item.pacote_id, list);
-        });
-        for (const pacote of pacotes) {
-          pacote.itens = itensMap.get(pacote.id) || [];
-        }
-      }
+      const res = await window.electronAPI.getRomaneioById(romaneio.id);
+      if (!res.success || !res.data) throw new Error(res.error || 'Erro ao buscar romaneio');
+      const pacotes = res.data.pacotes || [];
 
       Swal.close();
 
@@ -253,33 +207,10 @@ export default function Home() {
   const handleExportarExcelLista = async (romaneio: any) => {
     try {
       Swal.fire({ title: 'Preparando exportação...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-      const pResult = await window.electronAPI.queryDB(`
-        SELECT rp.*, COALESCE(e.nome, e_glob.nome) as especie
-        FROM romaneio_pacotes rp
-        LEFT JOIN especies e ON rp.especie_id = e.id
-        LEFT JOIN romaneios r ON rp.romaneio_id = r.id
-        LEFT JOIN especies e_glob ON r.especie_id = e_glob.id
-        WHERE rp.romaneio_id = ? ORDER BY rp.numero_pacote
-      `, [romaneio.id]);
+      const res = await window.electronAPI.getRomaneioById(romaneio.id);
+      if (!res.success || !res.data) throw new Error(res.error || 'Erro ao buscar romaneio');
+      const pacotes = res.data.pacotes || [];
 
-      const pacotes = pResult.data || [];
-      if (pacotes.length > 0) {
-        const pacoteIds = pacotes.map((p: any) => p.id);
-        const placeholders = pacoteIds.map(() => '?').join(',');
-        const iResult = await window.electronAPI.queryDB(
-          `SELECT * FROM romaneio_itens WHERE pacote_id IN (${placeholders}) ORDER BY id`,
-          pacoteIds
-        );
-        const itensMap = new Map<any, any[]>();
-        (iResult.data || []).forEach((item: any) => {
-          const list = itensMap.get(item.pacote_id) || [];
-          list.push(item);
-          itensMap.set(item.pacote_id, list);
-        });
-        for (const pacote of pacotes) {
-          pacote.itens = itensMap.get(pacote.id) || [];
-        }
-      }
       Swal.close();
 
       exportarRomaneioParaCSV({
@@ -320,52 +251,17 @@ export default function Home() {
         didOpen: () => { Swal.showLoading(); }
       });
 
-      const pResult = await window.electronAPI.queryDB(`
-        SELECT rp.*, COALESCE(e.nome, e_glob.nome) as especie
-        FROM romaneio_pacotes rp
-        LEFT JOIN especies e ON rp.especie_id = e.id
-        LEFT JOIN romaneios r ON rp.romaneio_id = r.id
-        LEFT JOIN especies e_glob ON r.especie_id = e_glob.id
-        WHERE rp.romaneio_id = ?
-        ORDER BY rp.numero_pacote
-      `, [id]);
-
-      if (!pResult.success) throw new Error('Erro pacotes');
-      const pacotesBD = pResult.data || [];
-
-      if (pacotesBD.length > 0) {
-        const pacoteIds = pacotesBD.map((p: any) => p.id);
-        const placeholders = pacoteIds.map(() => '?').join(',');
-        const iResult = await window.electronAPI.queryDB(
-          `SELECT * FROM romaneio_itens WHERE pacote_id IN (${placeholders}) ORDER BY id`,
-          pacoteIds
-        );
-        const itensMap = new Map<any, any[]>();
-        (iResult.data || []).forEach((item: any) => {
-          const list = itensMap.get(item.pacote_id) || [];
-          list.push(item);
-          itensMap.set(item.pacote_id, list);
-        });
-        for (const pacote of pacotesBD) {
-          pacote.itens = itensMap.get(pacote.id) || [];
-        }
-      }
-
-      const rResult = await window.electronAPI.queryDB(`
-        SELECT r.*, c.nome as cliente_nome
-        FROM romaneios r
-        LEFT JOIN clientes c ON r.cliente_id = c.id
-        WHERE r.id = ?
-      `, [id]);
-      const romaneioBD = rResult.data?.[0] as any;
+      const res = await window.electronAPI.getRomaneioById(id);
+      if (!res.success || !res.data) throw new Error(res.error || 'Erro ao duplicar romaneio');
+      const romaneioBD = res.data;
 
       Swal.close();
 
       loadRomaneio({
-        cliente: romaneioBD?.cliente_nome ? `${romaneioBD.cliente_nome} (Cópia)` : 'Cópia de Romaneio',
+        cliente: romaneioBD?.cliente ? `${romaneioBD.cliente} (Cópia)` : 'Cópia de Romaneio',
         data: new Date().toISOString().split('T')[0],
-        pacotes: pacotesBD,
-        tipoRomaneio: romaneioBD?.tipo_romaneio || 'padrao'
+        pacotes: romaneioBD.pacotes || [],
+        tipoRomaneio: (romaneioBD.tipo_romaneio as any) || 'padrao'
       });
 
       navigate('/novo');
@@ -392,14 +288,8 @@ export default function Home() {
 
     if (confirm.isConfirmed) {
       try {
-        const pacotesRes = await window.electronAPI.queryDB('SELECT id FROM romaneio_pacotes WHERE romaneio_id = ?', [id]);
-        if (pacotesRes.success && pacotesRes.data) {
-          for (const pacote of pacotesRes.data) {
-            await window.electronAPI.executeDB('DELETE FROM romaneio_itens WHERE pacote_id = ?', [pacote.id]);
-          }
-        }
-        await window.electronAPI.executeDB('DELETE FROM romaneio_pacotes WHERE romaneio_id = ?', [id]);
-        await window.electronAPI.executeDB('DELETE FROM romaneios WHERE id = ?', [id]);
+        const res = await window.electronAPI.deleteRomaneio(id);
+        if (!res.success) throw new Error(res.error || 'Falha ao excluir.');
 
         carregarRomaneios();
       } catch {

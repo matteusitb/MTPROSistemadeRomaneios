@@ -71,7 +71,7 @@ export default function Configuracoes() {
   const [downloadProgress, setDownloadProgress] = useState<{ percent: number; bytesPerSecond: number; transferred: number; total: number } | null>(null);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
   const [checkingError, setCheckingError] = useState<string | null>(null);
-  const [appVersion, setAppVersion] = useState('1.0.5');
+  const [appVersion, setAppVersion] = useState('1.0.6');
 
   useEffect(() => {
     carregarDados();
@@ -175,7 +175,7 @@ export default function Configuracoes() {
       const [infoRes, cfgRes, espRes] = await Promise.all([
         window.electronAPI.getDbInfo(),
         window.electronAPI.getBackupConfig(),
-        window.electronAPI.queryDB('SELECT * FROM especies ORDER BY nome')
+        window.electronAPI.getEspecies()
       ]);
       if (infoRes.success) setDbInfo(infoRes as any);
       if (cfgRes.success) setBackupConfig(cfgRes.config || {});
@@ -188,14 +188,116 @@ export default function Configuracoes() {
   };
 
   const handleBackupManual = async () => {
+    // Escolha de tipo de backup: Padrão vs Criptografado
+    const { value: modoBackup } = await Swal.fire({
+      title: 'Gerar Backup do Sistema',
+      html: `
+        <div style="text-align: left; font-size: 0.875rem; color: #475569; display: flex; flex-direction: column; gap: 14px; padding: 4px 10px;">
+          <p>Escolha o formato de segurança desejado para a exportação dos seus dados:</p>
+          
+          <label style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 2px solid #e2e8f0; border-radius: 14px; cursor: pointer; background: #f8fafc;" id="lbl-padrao">
+            <input type="radio" name="swal-backup-mode" value="padrao" checked style="margin-top: 3px; cursor: pointer;" />
+            <div>
+              <strong style="color: #1e293b; font-size: 0.9rem; display: block;">Backup Padrão (.sqlite)</strong>
+              <span style="font-size: 0.75rem; color: #64748b;">Arquivo direto do banco de dados, sem proteção por senha.</span>
+            </div>
+          </label>
+
+          <label style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 2px solid #a7f3d0; border-radius: 14px; cursor: pointer; background: #ecfdf5;" id="lbl-crypto">
+            <input type="radio" name="swal-backup-mode" value="crypto" style="margin-top: 3px; cursor: pointer;" />
+            <div>
+              <strong style="color: #065f46; font-size: 0.9rem; display: flex; align-items: center; gap: 6px;">
+                <span>🔒 Backup Criptografado (.mtbk)</span>
+                <span style="font-size: 0.65rem; background: #10b981; color: white; padding: 2px 6px; border-radius: 6px; font-weight: 800;">RECOMENDADO</span>
+              </strong>
+              <span style="font-size: 0.75rem; color: #047857;">Protegido com senha e criptografia militar AES-256-GCM. Máxima privacidade de clientes e preços.</span>
+            </div>
+          </label>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Continuar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#059669',
+      cancelButtonColor: '#94a3b8',
+      customClass: {
+        popup: 'rounded-3xl p-6 font-sans border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950',
+        title: 'text-xl font-black text-slate-800 dark:text-white tracking-tight',
+        confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-md text-sm cursor-pointer',
+        cancelButton: 'rounded-xl font-bold px-6 py-2.5 text-sm cursor-pointer'
+      },
+      preConfirm: () => {
+        const selected = (document.querySelector('input[name="swal-backup-mode"]:checked') as HTMLInputElement)?.value;
+        return selected || 'padrao';
+      }
+    });
+
+    if (!modoBackup) return;
+
+    let senhaBackup: string | undefined = undefined;
+
+    if (modoBackup === 'crypto') {
+      const { value: senhas } = await Swal.fire({
+        title: 'Definir Senha do Backup',
+        html: `
+          <div style="text-align: left; font-size: 0.875rem; color: #475569; display: flex; flex-direction: column; gap: 12px; padding: 4px 10px;">
+            <p style="font-size: 0.8rem;">Defina uma senha segura para descriptografar este arquivo no futuro:</p>
+            <div>
+              <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #334155; margin-bottom: 4px;">Senha:</label>
+              <input id="swal-pass-1" type="password" placeholder="Digite a senha" style="width: 100%; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 0.875rem; outline: none;" />
+            </div>
+            <div>
+              <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #334155; margin-bottom: 4px;">Confirmar Senha:</label>
+              <input id="swal-pass-2" type="password" placeholder="Repita a senha" style="width: 100%; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 0.875rem; outline: none;" />
+            </div>
+            <div style="padding: 10px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 10px; font-size: 0.75rem; color: #92400e;">
+              ⚠️ <strong>Atenção:</strong> Guarde esta senha com segurança. Não será possível restaurar este backup se a senha for perdida.
+            </div>
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Criptografar e Salvar',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#059669',
+        cancelButtonColor: '#94a3b8',
+        customClass: {
+          popup: 'rounded-3xl p-6 font-sans border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950',
+          title: 'text-xl font-black text-slate-800 dark:text-white tracking-tight',
+          confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-md text-sm cursor-pointer',
+          cancelButton: 'rounded-xl font-bold px-6 py-2.5 text-sm cursor-pointer'
+        },
+        preConfirm: () => {
+          const p1 = (document.getElementById('swal-pass-1') as HTMLInputElement)?.value;
+          const p2 = (document.getElementById('swal-pass-2') as HTMLInputElement)?.value;
+          if (!p1 || p1.length < 4) {
+            Swal.showValidationMessage('A senha deve ter pelo menos 4 caracteres.');
+            return false;
+          }
+          if (p1 !== p2) {
+            Swal.showValidationMessage('As senhas digitadas não coincidem.');
+            return false;
+          }
+          return p1;
+        }
+      });
+
+      if (!senhas) return;
+      senhaBackup = senhas;
+    }
+
     setBackupLoading(true);
     try {
-      const result = await window.electronAPI.backupDB();
+      const result = await window.electronAPI.backupDB(undefined, senhaBackup);
       if (result.success) {
         Swal.fire({
           icon: 'success',
-          title: 'Backup Realizado!',
-          html: `<p class="text-sm text-slate-600">Arquivo salvo em:</p><p class="text-xs font-mono bg-slate-100 rounded p-2 mt-2 break-all">${result.path}</p>`,
+          title: result.encrypted ? '🔒 Backup Criptografado Salvo!' : 'Backup Realizado!',
+          html: `
+            <div style="text-align: left; font-size: 0.875rem; color: #475569; display: flex; flex-direction: column; gap: 10px;">
+              <p>${result.encrypted ? 'O arquivo foi criptografado com <strong>AES-256-GCM</strong> e salvo com sucesso em:' : 'Arquivo salvo em:'}</p>
+              <p class="text-xs font-mono bg-slate-100 dark:bg-slate-900 rounded-xl p-3 border border-slate-200 dark:border-slate-800 break-all text-slate-800 dark:text-slate-200">${result.path}</p>
+            </div>
+          `,
           confirmButtonColor: '#059669',
           customClass: { popup: 'rounded-3xl', confirmButton: 'rounded-xl font-bold px-6 py-3' }
         });
@@ -219,7 +321,7 @@ export default function Configuracoes() {
           <div style="padding: 12px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; font-size: 0.75rem; color: #065f46;">
             <strong>🛡️ Segurança:</strong> Um backup automático do estado atual será criado preventivamente antes da restauração.
           </div>
-          <p style="font-size: 0.8rem; color: #64748b;">Deseja selecionar o arquivo de backup (.sqlite ou .db) agora?</p>
+          <p style="font-size: 0.8rem; color: #64748b;">Suporta arquivos padrão (<strong>.sqlite</strong>, <strong>.db</strong>) e arquivos protegidos por senha (<strong>.mtbk</strong>).</p>
         </div>
       `,
       icon: 'warning',
@@ -240,7 +342,69 @@ export default function Configuracoes() {
 
     setRestoringBackup(true);
     try {
-      const result = await window.electronAPI.restoreDB();
+      let result = await window.electronAPI.restoreDB();
+
+      // Caso o arquivo seja criptografado, solicitar senha interativamente
+      if (!result.success && result.requiresPassword && result.path) {
+        const filePath = result.path;
+        let senhaCorreta = false;
+
+        while (!senhaCorreta) {
+          const { value: senhaDigitada, isDismissed } = await Swal.fire({
+            title: '🔒 Backup Protegido por Senha',
+            html: `
+              <div style="text-align: left; font-size: 0.875rem; color: #475569; display: flex; flex-direction: column; gap: 10px; padding: 4px 10px;">
+                <p>O arquivo selecionado está protegido por criptografia.</p>
+                <div>
+                  <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #334155; margin-bottom: 6px;">Digite a senha de descriptografia:</label>
+                  <input id="swal-restore-pass" type="password" placeholder="Senha do backup" style="width: 100%; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 0.875rem; outline: none;" />
+                </div>
+              </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: 'Descriptografar e Restaurar',
+            cancelButtonText: 'Cancelar Restauração',
+            confirmButtonColor: '#059669',
+            cancelButtonColor: '#94a3b8',
+            customClass: {
+              popup: 'rounded-3xl p-6 font-sans border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950',
+              title: 'text-xl font-black text-slate-800 dark:text-white tracking-tight',
+              confirmButton: 'rounded-xl font-bold px-5 py-2.5 shadow-sm text-sm cursor-pointer',
+              cancelButton: 'rounded-xl font-bold px-5 py-2.5 text-sm cursor-pointer'
+            },
+            preConfirm: () => {
+              const p = (document.getElementById('swal-restore-pass') as HTMLInputElement)?.value;
+              if (!p) {
+                Swal.showValidationMessage('Digite a senha para prosseguir.');
+                return false;
+              }
+              return p;
+            }
+          });
+
+          if (isDismissed || !senhaDigitada) {
+            setRestoringBackup(false);
+            return;
+          }
+
+          // Tenta restaurar com a senha fornecida
+          result = await window.electronAPI.restoreDB(filePath, senhaDigitada);
+          if (result.success) {
+            senhaCorreta = true;
+          } else if (result.invalidPassword) {
+            await Swal.fire({
+              icon: 'error',
+              title: 'Senha Incorreta',
+              text: 'A senha informada não confere com a criptografia deste arquivo. Tente novamente.',
+              confirmButtonColor: '#ef4444',
+              customClass: { popup: 'rounded-3xl' }
+            });
+          } else {
+            break;
+          }
+        }
+      }
+
       if (result.success) {
         const nomeArquivo = result.path ? result.path.split(/[\\/]/).pop() : 'backup.sqlite';
         await Swal.fire({

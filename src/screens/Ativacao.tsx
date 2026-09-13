@@ -63,12 +63,23 @@ const Ativacao: React.FC<AtivacaoProps> = ({ onActivated, motivo }) => {
     }
   };
 
+  const handleOpenWhatsApp = () => {
+    if (!hardwareId) return;
+    const texto = encodeURIComponent(`Olá! Gostaria de ativar a licença do MT PRO - Romaneio de Madeira Serrada.\nMeu ID de Hardware: ${hardwareId}`);
+    const url = `https://wa.me/5593984035819?text=${texto}`;
+    if (window.electronAPI && typeof window.electronAPI.openExternalUrl === 'function') {
+      window.electronAPI.openExternalUrl(url);
+    } else {
+      window.open(url, '_blank');
+    }
+  };
+
   const getAlertMessage = () => {
     if (motivo === 'expired') {
       return {
         icon: <Clock className="w-5 h-5 text-amber-600 dark:text-amber-450 shrink-0" />,
         bg: 'bg-amber-50/80 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40',
-        text: 'Sua licença de uso expirou. Para renová-la, por favor, envie o ID de hardware abaixo para o suporte técnico.'
+        text: 'Seu período de teste de 7 dias ou sua licença de uso expirou. Para ativar ou renovar, envie o ID de hardware abaixo para o suporte.'
       };
     }
     if (motivo === 'fraud') {
@@ -102,9 +113,11 @@ const Ativacao: React.FC<AtivacaoProps> = ({ onActivated, motivo }) => {
             <KeyRound className="w-10 h-10 text-white" strokeWidth={1.5} />
           </div>
 
-          <h1 className="text-3xl font-black text-slate-800 dark:text-slate-100 mb-2 tracking-tight">Ativação Necessária</h1>
+          <h1 className="text-3xl font-black text-slate-800 dark:text-slate-100 mb-2 tracking-tight">Ativação de Licença</h1>
           <p className="text-slate-500 dark:text-slate-400 mb-8 text-center text-sm font-medium leading-relaxed">
-            Uma licença válida é necessária para liberar o acesso a este computador.
+            {motivo === 'expired' 
+              ? 'Seu período de teste de 7 dias foi finalizado. Digite a chave de ativação para continuar.' 
+              : 'Uma licença válida é necessária para liberar o acesso a este computador.'}
           </p>
 
           <form onSubmit={handleAtivar} className="w-full space-y-6">
@@ -147,13 +160,13 @@ const Ativacao: React.FC<AtivacaoProps> = ({ onActivated, motivo }) => {
             <button
               type="submit"
               disabled={ativando || motivo === 'fraud' || !chave.trim()}
-              className="w-full bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white font-bold py-4 px-4 rounded-xl shadow-lg shadow-fuchsia-500/20 hover:shadow-fuchsia-550/30 transition-all duration-300 flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5 disabled:hover:translate-y-0"
+              className="w-full bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white font-bold py-4 px-4 rounded-xl shadow-lg shadow-fuchsia-500/20 hover:shadow-fuchsia-550/30 transition-all duration-300 flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5 disabled:hover:translate-y-0 cursor-pointer"
             >
               {ativando ? (
                 <><RefreshCw className="w-5 h-5 animate-spin" /> <span>Validando...</span></>
               ) : (
                 <>
-                  <span>Ativar Licença</span>
+                  <span>Ativar Licença Completa</span>
                 </>
               )}
             </button>
@@ -161,24 +174,35 @@ const Ativacao: React.FC<AtivacaoProps> = ({ onActivated, motivo }) => {
 
           {/* ID do Hardware */}
           <div className="mt-8 text-center text-xs text-slate-400 flex flex-col items-center gap-3 justify-center w-full">
-            <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800/80 rounded-2xl flex flex-col items-center gap-1.5 w-full">
+            <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800/80 rounded-2xl flex flex-col items-center gap-2 w-full">
               <span className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-wider">ID deste Computador (Hardware ID)</span>
               <span className="text-[11px] font-mono text-slate-600 dark:text-slate-300 break-all select-all font-bold bg-white dark:bg-slate-900 px-3 py-2 rounded-lg border border-slate-150 dark:border-slate-800 shadow-inner w-full text-center">
                 {hardwareId || 'Carregando...'}
               </span>
-              {hardwareId && (
-                <button
-                  type="button"
-                  onClick={handleCopyId}
-                  className="text-xs text-fuchsia-600 dark:text-fuchsia-400 hover:text-fuchsia-700 font-black transition-all mt-1 hover:underline cursor-pointer flex items-center gap-1.5"
-                >
-                  {copiado ? (
-                    <><Check size={12} strokeWidth={3} className="text-emerald-500" /> <span className="text-emerald-500 font-bold">Copiado!</span></>
-                  ) : (
-                    <><Copy size={12} strokeWidth={2.5} /> Copiar Código</>
-                  )}
-                </button>
-              )}
+              <div className="flex items-center justify-center gap-4 w-full mt-1">
+                {hardwareId && (
+                  <button
+                    type="button"
+                    onClick={handleCopyId}
+                    className="text-xs text-fuchsia-600 dark:text-fuchsia-400 hover:text-fuchsia-700 font-black transition-all hover:underline cursor-pointer flex items-center gap-1.5"
+                  >
+                    {copiado ? (
+                      <><Check size={12} strokeWidth={3} className="text-emerald-500" /> <span className="text-emerald-500 font-bold">Copiado!</span></>
+                    ) : (
+                      <><Copy size={12} strokeWidth={2.5} /> Copiar ID</>
+                    )}
+                  </button>
+                )}
+                {hardwareId && (
+                  <button
+                    type="button"
+                    onClick={handleOpenWhatsApp}
+                    className="text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 font-black transition-all hover:underline cursor-pointer flex items-center gap-1.5"
+                  >
+                    💬 Solicitar Chave
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

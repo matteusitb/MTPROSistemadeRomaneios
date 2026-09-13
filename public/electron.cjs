@@ -14,6 +14,9 @@ let mainWindow;
 // --- SEGURANÇA E ATIVAÇÃO ---
 let sistemaAtivado = false;
 let motivoBloqueio = 'unactivated';
+let isTrial = false;
+let trialDiasRestantes = 0;
+let licencaValidade = '';
 
 const _s = [77, 65, 68, 69, 73, 82, 65, 50, 48, 50, 54]; // MADEIRA2026
 const MEU_SEGREDO = process.env.APP_SECRET || String.fromCharCode(..._s);
@@ -55,6 +58,127 @@ function descriptografar(texto) {
   }
 }
 
+function getShadowFilePath() {
+  const localAppData = process.env.LOCALAPPDATA || app.getPath('userData');
+  const dir = path.join(localAppData, 'Microsoft', 'Windows', 'SystemSecurity');
+  return {
+    dir,
+    file: path.join(dir, 'sec_blob.dat')
+  };
+}
+
+function readRegistryTrial() {
+  if (process.platform !== 'win32') return null;
+  try {
+    const out = execSync('reg query "HKCU\\Software\\MTPRO\\Licensing" /v "TrialVault" 2>nul', { encoding: 'utf8' });
+    const match = out.match(/TrialVault\s+REG_SZ\s+([a-f0-9]+)/i);
+    if (match && match[1]) {
+      const dec = descriptografar(match[1]);
+      if (dec) return JSON.parse(dec);
+    }
+  } catch (e) {
+    // Chave não existe
+  }
+  return null;
+}
+
+function writeRegistryTrial(dataObj) {
+  if (process.platform !== 'win32') return;
+  try {
+    const enc = criptografar(JSON.stringify(dataObj));
+    execSync(`reg add "HKCU\\Software\\MTPRO\\Licensing" /v "TrialVault" /t REG_SZ /d "${enc}" /f 2>nul`, { stdio: 'ignore' });
+  } catch (e) {
+    // Ignora
+  }
+}
+
+function readShadowTrial() {
+  try {
+    const { file } = getShadowFilePath();
+    if (fs.existsSync(file)) {
+      const enc = fs.readFileSync(file, 'utf8');
+      const dec = descriptografar(enc);
+      if (dec) return JSON.parse(dec);
+    }
+  } catch (e) {
+    // Ignora
+  }
+  return null;
+}
+
+function writeShadowTrial(dataObj) {
+  try {
+    const { dir, file } = getShadowFilePath();
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const enc = criptografar(JSON.stringify(dataObj));
+    fs.writeFileSync(file, enc);
+  } catch (e) {
+    // Ignora
+  }
+}
+
+function readSQLiteTrial() {
+  if (!db) return null;
+  try {
+    const stmt = db.prepare("SELECT valor FROM system_metadata WHERE chave = 'trial_vault'");
+    if (stmt.step()) {
+      const enc = stmt.getAsObject().valor;
+      stmt.free();
+      const dec = descriptografar(enc);
+      if (dec) return JSON.parse(dec);
+    }
+    stmt.free();
+  } catch (e) {
+    // Ignora
+  }
+  return null;
+}
+
+function writeSQLiteTrial(dataObj) {
+  if (!db) return;
+  try {
+    const enc = criptografar(JSON.stringify(dataObj));
+    db.run(
+      "INSERT OR REPLACE INTO system_metadata (chave, valor, criado_em) VALUES ('trial_vault', ?, ?)",
+      [enc, new Date().toISOString()]
+    );
+  } catch (e) {
+    // Ignora
+  }
+}
+
+function persistirTrialEmTodasCamadas(trialData) {
+  writeRegistryTrial(trialData);
+  writeShadowTrial(trialData);
+  writeSQLiteTrial(trialData);
+}
+
+function buscarHistoricoTrialExistente() {
+  const machineId = getHardwareId();
+
+  // 1. Tenta Registry do Windows
+  const fromReg = readRegistryTrial();
+  if (fromReg && fromReg.trial && fromReg.mid === machineId && fromReg.trial_start && fromReg.trial_exp) {
+    return fromReg;
+  }
+
+  // 2. Tenta Shadow File
+  const fromShadow = readShadowTrial();
+  if (fromShadow && fromShadow.trial && fromShadow.mid === machineId && fromShadow.trial_start && fromShadow.trial_exp) {
+    return fromShadow;
+  }
+
+  // 3. Tenta SQLite metadata
+  const fromSqlite = readSQLiteTrial();
+  if (fromSqlite && fromSqlite.trial && fromSqlite.mid === machineId && fromSqlite.trial_start && fromSqlite.trial_exp) {
+    return fromSqlite;
+  }
+
+  return null;
+}
+
 async function verificarLicencaLocal() {
   const appData = app.getPath('userData');
   const pastaBase = path.join(appData, 'romaneio-madeira');
@@ -72,111 +196,131 @@ async function verificarLicencaLocal() {
       }
 
       const licencaLocal = JSON.parse(conteudoJson);
-      
-      if (!licencaLocal || !licencaLocal.token || !licencaLocal.last_seen) {
-        console.error("Estrutura do arquivo de licença local inválida.");
-        sistemaAtivado = false;
-        motivoBloqueio = 'unactivated';
-        return false;
-      }
 
-      // 1. Decodificar o token RSA original e validar sua assinatura digital RSA
-      let licencaPacote;
-      try {
-        const jsonString = Buffer.from(licencaLocal.token, 'base64').toString('utf8');
-        licencaPacote = JSON.parse(jsonString);
-      } catch (e) {
-        console.error("Erro ao decodificar token RSA salvo localmente.");
-        sistemaAtivado = false;
-        motivoBloqueio = 'unactivated';
-        return false;
-      }
-
-      if (!licencaPacote || !licencaPacote.data || !licencaPacote.signature) {
-        console.error("Token de licença salvo localmente está incompleto ou corrompido.");
-        sistemaAtivado = false;
-        motivoBloqueio = 'unactivated';
-        return false;
-      }
-
-      const { data, signature } = licencaPacote;
-      
-      // Valida assinatura RSA
-      const dadosString = JSON.stringify(data);
-      const verifier = crypto.createVerify('SHA256');
-      verifier.update(dadosString);
-      const assinaturaValida = verifier.verify(CHAVE_PUBLICA_RSA, signature, 'base64');
-
-      if (!assinaturaValida) {
-        console.error("🚨 CRÍTICO: Assinatura digital da licença local é inválida! Adulteração detectada.");
-        sistemaAtivado = false;
-        motivoBloqueio = 'unactivated';
-        return false;
-      }
-
-      // 2. Valida o Hardware ID
-      const machineId = getHardwareId();
-      if (data.mid !== machineId) {
-        console.error("Máquina não autorizada para esta licença.");
-        sistemaAtivado = false;
-        motivoBloqueio = 'unactivated';
-        return false;
-      }
-
-      const agora = new Date();
-      const exp = new Date(data.exp);
-      const lastSeen = new Date(licencaLocal.last_seen);
-
-      // 3. Verifica Expiração
-      if (agora > exp) {
-        console.error(`Licença expirou em: ${data.exp}`);
-        sistemaAtivado = false;
-        motivoBloqueio = 'expired';
-        return false;
-      }
-
-      // 4. ANTI-FRAUDE: Relógio Retrocedido (comparando com last_seen da licença)
-      if (agora < lastSeen) {
-        console.error("🚨 DETECÇÃO DE FRAUDE: Relógio do computador retrocedido!");
-        sistemaAtivado = false;
-        motivoBloqueio = 'fraud';
-        return false;
-      }
-
-      // 5. ANTI-FRAUDE: Relógio Retrocedido (comparando com a maior data de romaneio salva no banco)
-      if (db) {
+      // CASO 1: Licença Completa Paga (Token RSA)
+      if (licencaLocal && licencaLocal.token && licencaLocal.last_seen) {
+        let licencaPacote;
         try {
-          const stmt = db.prepare("SELECT data FROM romaneios ORDER BY data DESC LIMIT 1");
-          let result = [];
-          while (stmt.step()) {
-            result.push(stmt.getAsObject());
-          }
-          stmt.free();
-          
-          if (result.length > 0 && result[0].data) {
-            const dataUltimoRomaneio = new Date(result[0].data + "T12:00:00");
-            const hojeSemHora = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-            const romaneioSemHora = new Date(dataUltimoRomaneio.getFullYear(), dataUltimoRomaneio.getMonth(), dataUltimoRomaneio.getDate());
-            
-            if (hojeSemHora < romaneioSemHora) {
-              console.error("🚨 DETECÇÃO DE FRAUDE: O relógio do computador é anterior à data do último romaneio salvo no banco de dados!");
-              sistemaAtivado = false;
-              motivoBloqueio = 'fraud';
-              return false;
-            }
-          }
+          const jsonString = Buffer.from(licencaLocal.token, 'base64').toString('utf8');
+          licencaPacote = JSON.parse(jsonString);
         } catch (e) {
-          // Ignora
+          console.error("Erro ao decodificar token RSA salvo localmente.");
+          sistemaAtivado = false;
+          motivoBloqueio = 'unactivated';
+          return false;
         }
+
+        if (!licencaPacote || !licencaPacote.data || !licencaPacote.signature) {
+          console.error("Token de licença salvo localmente está incompleto ou corrompido.");
+          sistemaAtivado = false;
+          motivoBloqueio = 'unactivated';
+          return false;
+        }
+
+        const { data, signature } = licencaPacote;
+
+        // Valida assinatura RSA
+        const dadosString = JSON.stringify(data);
+        const verifier = crypto.createVerify('SHA256');
+        verifier.update(dadosString);
+        const assinaturaValida = verifier.verify(CHAVE_PUBLICA_RSA, signature, 'base64');
+
+        if (!assinaturaValida) {
+          console.error("🚨 CRÍTICO: Assinatura digital da licença local é inválida! Adulteração detectada.");
+          sistemaAtivado = false;
+          motivoBloqueio = 'unactivated';
+          return false;
+        }
+
+        // Valida o Hardware ID
+        const machineId = getHardwareId();
+        if (data.mid !== machineId) {
+          console.error("Máquina não autorizada para esta licença.");
+          sistemaAtivado = false;
+          motivoBloqueio = 'unactivated';
+          return false;
+        }
+
+        const agora = new Date();
+        const exp = new Date(data.exp);
+        const lastSeen = new Date(licencaLocal.last_seen);
+
+        // Anti-Fraude: Relógio retrocedido em mais de 24 horas (tolerância para fusos horários/NTP)
+        if (lastSeen.getTime() - agora.getTime() > 24 * 60 * 60 * 1000) {
+          console.error("🚨 DETECÇÃO DE FRAUDE: Relógio do computador retrocedido!");
+          sistemaAtivado = false;
+          motivoBloqueio = 'fraud';
+          return false;
+        }
+
+        // Verifica Expiração da licença completa
+        if (agora > exp) {
+          console.error(`Licença expirou em: ${data.exp}`);
+          sistemaAtivado = false;
+          motivoBloqueio = 'expired';
+          isTrial = false;
+          trialDiasRestantes = 0;
+          licencaValidade = exp.toLocaleDateString('pt-BR');
+          return false;
+        }
+
+        // Atualiza last_seen localmente
+        licencaLocal.last_seen = agora.toISOString();
+        fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(licencaLocal)));
+
+        sistemaAtivado = true;
+        motivoBloqueio = 'ok';
+        isTrial = false;
+        trialDiasRestantes = 0;
+        licencaValidade = exp.toLocaleDateString('pt-BR');
+        return true;
       }
 
-      // Atualiza last_seen localmente
-      licencaLocal.last_seen = agora.toISOString();
-      fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(licencaLocal)));
+      // CASO 2: Modo Trial de 7 Dias
+      if (licencaLocal && licencaLocal.trial) {
+        const machineId = getHardwareId();
+        if (licencaLocal.mid !== machineId) {
+          console.error("Licença trial não pertence a esta máquina.");
+          sistemaAtivado = false;
+          motivoBloqueio = 'unactivated';
+          return false;
+        }
 
-      sistemaAtivado = true;
-      motivoBloqueio = 'ok';
-      return true;
+        const agora = new Date();
+        const trialExp = new Date(licencaLocal.trial_exp);
+        const lastSeen = new Date(licencaLocal.last_seen);
+
+        // Anti-Fraude: Relógio retrocedido em mais de 24 horas (tolerância para fusos horários/NTP)
+        if (lastSeen.getTime() - agora.getTime() > 24 * 60 * 60 * 1000) {
+          console.error("🚨 DETECÇÃO DE FRAUDE NO TRIAL: Relógio do computador retrocedido!");
+          sistemaAtivado = false;
+          motivoBloqueio = 'fraud';
+          return false;
+        }
+
+        if (agora > trialExp) {
+          console.warn("Período de avaliação de 7 dias expirado.");
+          sistemaAtivado = false;
+          motivoBloqueio = 'expired';
+          isTrial = true;
+          trialDiasRestantes = 0;
+          licencaValidade = trialExp.toLocaleDateString('pt-BR');
+          return false;
+        }
+
+        const diffMs = trialExp.getTime() - agora.getTime();
+        trialDiasRestantes = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+        sistemaAtivado = true;
+        motivoBloqueio = 'ok';
+        isTrial = true;
+        licencaValidade = trialExp.toLocaleDateString('pt-BR');
+
+        // Atualiza last_seen em todas as camadas de segurança
+        licencaLocal.last_seen = agora.toISOString();
+        fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(licencaLocal)));
+        persistirTrialEmTodasCamadas(licencaLocal);
+        return true;
+      }
 
     } catch (err) {
       console.error("Erro ao verificar licença:", err.message);
@@ -186,9 +330,84 @@ async function verificarLicencaLocal() {
     }
   }
 
-  sistemaAtivado = false;
-  motivoBloqueio = 'unactivated';
-  return false;
+  // CASO 3: license.dat não existe no caminho padrão
+  // Verificar se o computador já possui histórico de Trial gravado em outra camada (Registro, Shadow File, SQLite)
+  const historicoPrevio = buscarHistoricoTrialExistente();
+
+  if (historicoPrevio) {
+    const agora = new Date();
+    const trialExp = new Date(historicoPrevio.trial_exp);
+    const lastSeen = new Date(historicoPrevio.last_seen || historicoPrevio.trial_start);
+
+    // Anti-Fraude: Relógio retrocedido em mais de 24 horas (tolerância para fusos horários/NTP)
+    if (lastSeen.getTime() - agora.getTime() > 24 * 60 * 60 * 1000) {
+      console.error("🚨 DETECÇÃO DE FRAUDE NO TRIAL: Relógio do computador retrocedido!");
+      sistemaAtivado = false;
+      motivoBloqueio = 'fraud';
+      return false;
+    }
+
+    // Restaura o arquivo license.dat com as datas ORIGINAIS
+    if (!fs.existsSync(pastaBase)) {
+      fs.mkdirSync(pastaBase, { recursive: true });
+    }
+    historicoPrevio.last_seen = agora.toISOString();
+    fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(historicoPrevio)));
+    persistirTrialEmTodasCamadas(historicoPrevio);
+
+    if (agora > trialExp) {
+      console.warn("Tentativa de reset de trial detectada: O período de 7 dias original já expirou.");
+      sistemaAtivado = false;
+      motivoBloqueio = 'expired';
+      isTrial = true;
+      trialDiasRestantes = 0;
+      licencaValidade = trialExp.toLocaleDateString('pt-BR');
+      return false;
+    }
+
+    const diffMs = trialExp.getTime() - agora.getTime();
+    trialDiasRestantes = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+    sistemaAtivado = true;
+    motivoBloqueio = 'ok';
+    isTrial = true;
+    licencaValidade = trialExp.toLocaleDateString('pt-BR');
+    console.log(`⚡ Trial restaurado a partir do cofre persistente. ${trialDiasRestantes} dia(s) restante(s).`);
+    return true;
+  }
+
+  // CASO 4: Primeira Execução real no computador (sem histórico prévio em nenhuma camada)
+  try {
+    if (!fs.existsSync(pastaBase)) {
+      fs.mkdirSync(pastaBase, { recursive: true });
+    }
+
+    const agora = new Date();
+    const trialExp = new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const trialData = {
+      trial: true,
+      mid: getHardwareId(),
+      trial_start: agora.toISOString(),
+      trial_exp: trialExp.toISOString(),
+      last_seen: agora.toISOString()
+    };
+
+    // Grava no license.dat e em todas as camadas de segurança
+    fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(trialData)));
+    persistirTrialEmTodasCamadas(trialData);
+
+    sistemaAtivado = true;
+    motivoBloqueio = 'ok';
+    isTrial = true;
+    trialDiasRestantes = 7;
+    licencaValidade = trialExp.toLocaleDateString('pt-BR');
+    console.log("⚡ Período Trial de 7 dias iniciado com sucesso e registrado no cofre de segurança.");
+    return true;
+  } catch (errTrial) {
+    console.error("Erro ao criar licença Trial inicial:", errTrial.message);
+    sistemaAtivado = false;
+    motivoBloqueio = 'unactivated';
+    return false;
+  }
 }
 
 function protectedHandle(channel, callback) {
@@ -220,6 +439,19 @@ function applyMigrations(targetDb) {
     console.error('Erro ao criar tabela licenca_local:', e.message);
   }
 
+  // Garantir a tabela de metadados do sistema para cofre de segurança Trial
+  try {
+    targetDb.run(`
+      CREATE TABLE IF NOT EXISTS system_metadata (
+        chave TEXT PRIMARY KEY,
+        valor TEXT NOT NULL,
+        criado_em TEXT NOT NULL
+      );
+    `);
+  } catch (e) {
+    console.error('Erro ao criar tabela system_metadata:', e.message);
+  }
+
   // Executar migrações seguras no banco já existente
   try {
     targetDb.run(`ALTER TABLE especies ADD COLUMN cientifico TEXT`);
@@ -237,6 +469,149 @@ function applyMigrations(targetDb) {
     targetDb.run(`ALTER TABLE romaneios ADD COLUMN tipo_romaneio TEXT DEFAULT 'padrao'`);
   } catch (e) {
     // Coluna já existe, ignora
+  }
+}
+
+function popularRomaneiosDemo(targetDb) {
+  try {
+    const d = new Date();
+    const hoje = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    
+    // Romaneio 1: Padrão M³
+    const c1Id = getOrInsert('clientes', 'Madeireira Vale do Verde Ltda');
+    const espIpe = getOrInsertEspecie('Ipê');
+    
+    targetDb.run(
+      `INSERT INTO romaneios (data, cliente_id, especie_id, total_m3, total_ml, status, tipo_romaneio) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [hoje, c1Id, espIpe, 3.167, 430.30, 'Ativo', 'padrao']
+    );
+    const r1Id = targetDb.exec("SELECT last_insert_rowid()")[0].values[0][0];
+    
+    // R1 - Pacote 1 (Pranchões 5.0 x 15.0)
+    targetDb.run(
+      `INSERT INTO romaneio_pacotes (romaneio_id, numero_pacote, total_m3, total_ml, especie_id) VALUES (?, ?, ?, ?, ?)`,
+      [r1Id, 1, 1.736, 231.50, espIpe]
+    );
+    const p1_1Id = targetDb.exec("SELECT last_insert_rowid()")[0].values[0][0];
+    
+    const r1p1_itens = [
+      [p1_1Id, 5.0, 15.0, 3.50, 12, 0.315, 42.00],
+      [p1_1Id, 5.0, 15.0, 4.00, 18, 0.540, 72.00],
+      [p1_1Id, 5.0, 15.0, 4.50, 15, 0.506, 67.50],
+      [p1_1Id, 5.0, 15.0, 5.00, 10, 0.375, 50.00]
+    ];
+    r1p1_itens.forEach(it => {
+      targetDb.run(
+        `INSERT INTO romaneio_itens (pacote_id, espessura, largura, comprimento, quantidade, volume_m3, volume_ml) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        it
+      );
+    });
+
+    // R1 - Pacote 2 (Vigas 6.0 x 12.0)
+    targetDb.run(
+      `INSERT INTO romaneio_pacotes (romaneio_id, numero_pacote, total_m3, total_ml, especie_id) VALUES (?, ?, ?, ?, ?)`,
+      [r1Id, 2, 1.431, 198.80, espIpe]
+    );
+    const p1_2Id = targetDb.exec("SELECT last_insert_rowid()")[0].values[0][0];
+    
+    const r1p2_itens = [
+      [p1_2Id, 6.0, 12.0, 3.00, 14, 0.302, 42.00],
+      [p1_2Id, 6.0, 12.0, 4.00, 20, 0.576, 80.00],
+      [p1_2Id, 6.0, 12.0, 4.80, 16, 0.553, 76.80]
+    ];
+    r1p2_itens.forEach(it => {
+      targetDb.run(
+        `INSERT INTO romaneio_itens (pacote_id, espessura, largura, comprimento, quantidade, volume_m3, volume_ml) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        it
+      );
+    });
+
+    // Romaneio 2: Bica Corrida / Largura Aberta
+    const c2Id = getOrInsert('clientes', 'Exportadora Amazônia Woods');
+    const espCumaru = getOrInsertEspecie('Cumaru');
+    
+    targetDb.run(
+      `INSERT INTO romaneios (data, cliente_id, especie_id, total_m3, total_ml, status, tipo_romaneio) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [hoje, c2Id, espCumaru, 0.211, 46.80, 'Ativo', 'aberta']
+    );
+    const r2Id = targetDb.exec("SELECT last_insert_rowid()")[0].values[0][0];
+
+    // R2 - Pacote 1 (Espessura 2.5cm, variadas)
+    targetDb.run(
+      `INSERT INTO romaneio_pacotes (romaneio_id, numero_pacote, total_m3, total_ml, especie_id) VALUES (?, ?, ?, ?, ?)`,
+      [r2Id, 1, 0.123, 28.80, espCumaru]
+    );
+    const p2_1Id = targetDb.exec("SELECT last_insert_rowid()")[0].values[0][0];
+
+    const r2p1_itens = [
+      [p2_1Id, 2.5, 13.0, 3.20, 1, 0.010, 3.20],
+      [p2_1Id, 2.5, 15.0, 3.20, 1, 0.012, 3.20],
+      [p2_1Id, 2.5, 18.0, 3.20, 1, 0.014, 3.20],
+      [p2_1Id, 2.5, 20.0, 3.20, 1, 0.016, 3.20],
+      [p2_1Id, 2.5, 14.0, 4.00, 1, 0.014, 4.00],
+      [p2_1Id, 2.5, 16.0, 4.00, 1, 0.016, 4.00],
+      [p2_1Id, 2.5, 19.0, 4.00, 1, 0.019, 4.00],
+      [p2_1Id, 2.5, 22.0, 4.00, 1, 0.022, 4.00]
+    ];
+    r2p1_itens.forEach(it => {
+      targetDb.run(
+        `INSERT INTO romaneio_itens (pacote_id, espessura, largura, comprimento, quantidade, volume_m3, volume_ml) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        it
+      );
+    });
+
+    // R2 - Pacote 2 (Espessura 2.5cm x 4.50m)
+    targetDb.run(
+      `INSERT INTO romaneio_pacotes (romaneio_id, numero_pacote, total_m3, total_ml, especie_id) VALUES (?, ?, ?, ?, ?)`,
+      [r2Id, 2, 0.088, 18.00, espCumaru]
+    );
+    const p2_2Id = targetDb.exec("SELECT last_insert_rowid()")[0].values[0][0];
+
+    const r2p2_itens = [
+      [p2_2Id, 2.5, 15.0, 4.50, 1, 0.017, 4.50],
+      [p2_2Id, 2.5, 18.0, 4.50, 1, 0.020, 4.50],
+      [p2_2Id, 2.5, 20.0, 4.50, 1, 0.023, 4.50],
+      [p2_2Id, 2.5, 25.0, 4.50, 1, 0.028, 4.50]
+    ];
+    r2p2_itens.forEach(it => {
+      targetDb.run(
+        `INSERT INTO romaneio_itens (pacote_id, espessura, largura, comprimento, quantidade, volume_m3, volume_ml) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        it
+      );
+    });
+
+    // Romaneio 3: Pés Corridos (Exportação)
+    const c3Id = getOrInsert('clientes', 'Timber Trade International Inc.');
+    const espJatoba = getOrInsertEspecie('Jatobá');
+
+    targetDb.run(
+      `INSERT INTO romaneios (data, cliente_id, especie_id, total_m3, total_ml, status, tipo_romaneio) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [hoje, c3Id, espJatoba, 1.121, 289.56, 'Ativo', 'pes']
+    );
+    const r3Id = targetDb.exec("SELECT last_insert_rowid()")[0].values[0][0];
+
+    // R3 - Pacote 1 (Decking 1" x 6" em pés)
+    targetDb.run(
+      `INSERT INTO romaneio_pacotes (romaneio_id, numero_pacote, total_m3, total_ml, especie_id) VALUES (?, ?, ?, ?, ?)`,
+      [r3Id, 1, 1.121, 289.56, espJatoba]
+    );
+    const p3_1Id = targetDb.exec("SELECT last_insert_rowid()")[0].values[0][0];
+
+    const r3p1_itens = [
+      [p3_1Id, 1.0, 6.0, 8.0, 25, 0.236, 60.96],
+      [p3_1Id, 1.0, 6.0, 10.0, 30, 0.354, 91.44],
+      [p3_1Id, 1.0, 6.0, 12.0, 20, 0.283, 73.15],
+      [p3_1Id, 1.0, 6.0, 14.0, 15, 0.248, 64.01]
+    ];
+    r3p1_itens.forEach(it => {
+      targetDb.run(
+        `INSERT INTO romaneio_itens (pacote_id, espessura, largura, comprimento, quantidade, volume_m3, volume_ml) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        it
+      );
+    });
+
+  } catch (err) {
+    console.error('Erro ao popular romaneios de demonstração:', err.message);
   }
 }
 
@@ -332,6 +707,18 @@ async function initDB() {
     }
   } catch (err) {
     console.error('Erro ao verificar ou popular a tabela especies:', err.message);
+  }
+
+  // Verificar se o banco precisa ser populado com romaneios de demonstração
+  try {
+    const resRom = db.exec("SELECT COUNT(*) as qtd FROM romaneios");
+    const qtdRomaneios = resRom.length > 0 && resRom[0].values.length > 0 ? resRom[0].values[0][0] : 0;
+    if (qtdRomaneios === 0) {
+      popularRomaneiosDemo(db);
+      console.log('⚡ 3 Romaneios de demonstração inseridos com sucesso no banco SQLite.');
+    }
+  } catch (errDemo) {
+    console.error('Erro ao verificar/popular romaneios demo:', errDemo.message);
   }
 
   saveDB();
@@ -434,6 +821,8 @@ function scheduleAutoBackup() {
 // ─── APP INIT ────────────────────────────────────────────────────────────────
 
 function createWindow() {
+  const isDev = !app.isPackaged;
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -441,6 +830,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      devTools: isDev,
     },
   });
 
@@ -454,12 +844,29 @@ function createWindow() {
     return { action: 'allow' };
   });
 
-  const isDev = !app.isPackaged;
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
     Menu.setApplicationMenu(null);
+    
+    // Bloquear estritamente qualquer tentativa de abertura do DevTools em produção
+    mainWindow.webContents.on('devtools-opened', () => {
+      mainWindow.webContents.closeDevTools();
+    });
+
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      const isDevKey = (
+        input.key === 'F12' ||
+        ((input.control || input.meta) && input.shift && ['i', 'r', 'j', 'c'].includes(input.key.toLowerCase())) ||
+        ((input.control || input.meta) && input.alt && ['i', 'j', 'c'].includes(input.key.toLowerCase())) ||
+        ((input.control || input.meta) && ['u'].includes(input.key.toLowerCase()))
+      );
+      if (isDevKey) {
+        event.preventDefault();
+      }
+    });
+
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 }
@@ -479,14 +886,25 @@ app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// ─── IPC: DB QUERY ───────────────────────────────────────────────────────────
+// ─── IPC: OPERAÇÕES DE ROMANEIOS & CADASTROS (HANDLERS NOMEADOS E VALIDADOS) ───
 
-protectedHandle('db-query', (event, query, params) => {
+protectedHandle('get-romaneios', () => {
   try {
-    const stmt = db.prepare(query);
-    if (params) {
-      stmt.bind(params);
-    }
+    const stmt = db.prepare(`
+      SELECT r.id, r.data, c.nome as cliente, 
+             COALESCE(
+               (SELECT GROUP_CONCAT(DISTINCT esp.nome) 
+                FROM romaneio_pacotes pack 
+                LEFT JOIN especies esp ON pack.especie_id = esp.id 
+                WHERE pack.romaneio_id = r.id AND pack.especie_id IS NOT NULL),
+               e_old.nome
+             ) as especie,
+             r.total_m3, r.total_ml, r.tipo_romaneio 
+      FROM romaneios r 
+      LEFT JOIN clientes c ON r.cliente_id = c.id 
+      LEFT JOIN especies e_old ON r.especie_id = e_old.id
+      ORDER BY r.id DESC
+    `);
     const results = [];
     while (stmt.step()) {
       results.push(stmt.getAsObject());
@@ -498,15 +916,190 @@ protectedHandle('db-query', (event, query, params) => {
   }
 });
 
-protectedHandle('db-execute', (event, query, params) => {
+protectedHandle('get-romaneio-by-id', (event, id) => {
   try {
-    if (params) {
-      const stmt = db.prepare(query);
-      stmt.run(params);
-      stmt.free();
-    } else {
-      db.run(query);
+    const numId = Number(id);
+    if (!numId || isNaN(numId) || numId <= 0) {
+      return { success: false, error: 'ID de romaneio inválido.' };
     }
+
+    // 1. Dados do romaneio
+    const rStmt = db.prepare(`
+      SELECT r.id, r.data, COALESCE(c.nome, '') as cliente, r.total_m3, r.total_ml, r.tipo_romaneio, r.cliente_id, r.especie_id
+      FROM romaneios r
+      LEFT JOIN clientes c ON r.cliente_id = c.id
+      WHERE r.id = ?
+    `);
+    rStmt.bind([numId]);
+    if (!rStmt.step()) {
+      rStmt.free();
+      return { success: false, error: 'Romaneio não encontrado.' };
+    }
+    const romaneio = rStmt.getAsObject();
+    rStmt.free();
+
+    // 2. Pacotes do romaneio
+    const pStmt = db.prepare(`
+      SELECT rp.*, COALESCE(e.nome, e_glob.nome, '') as especie
+      FROM romaneio_pacotes rp
+      LEFT JOIN especies e ON rp.especie_id = e.id
+      LEFT JOIN romaneios r ON rp.romaneio_id = r.id
+      LEFT JOIN especies e_glob ON r.especie_id = e_glob.id
+      WHERE rp.romaneio_id = ?
+      ORDER BY rp.numero_pacote ASC
+    `);
+    pStmt.bind([numId]);
+    const pacotes = [];
+    while (pStmt.step()) {
+      pacotes.push(pStmt.getAsObject());
+    }
+    pStmt.free();
+
+    // 3. Itens de cada pacote
+    if (pacotes.length > 0) {
+      const pacoteIds = pacotes.map(p => p.id);
+      const placeholders = pacoteIds.map(() => '?').join(',');
+      const iStmt = db.prepare(`
+        SELECT * FROM romaneio_itens
+        WHERE pacote_id IN (${placeholders})
+        ORDER BY id ASC
+      `);
+      iStmt.bind(pacoteIds);
+      const itensMap = new Map();
+      while (iStmt.step()) {
+        const item = iStmt.getAsObject();
+        const list = itensMap.get(item.pacote_id) || [];
+        list.push(item);
+        itensMap.set(item.pacote_id, list);
+      }
+      iStmt.free();
+
+      pacotes.forEach(p => {
+        p.itens = itensMap.get(p.id) || [];
+      });
+    }
+
+    // Consolidar string de espécies se necessário
+    const temEspecieNosPacotes = pacotes.some(p => p.especie);
+    const especiesConsolidadas = temEspecieNosPacotes
+      ? Array.from(new Set(pacotes.map(p => p.especie).filter(Boolean))).join(', ')
+      : (romaneio.especie || 'Sem espécie');
+
+    return {
+      success: true,
+      data: {
+        ...romaneio,
+        especie: especiesConsolidadas,
+        pacotes
+      }
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+protectedHandle('delete-romaneio', (event, id) => {
+  try {
+    const numId = Number(id);
+    if (!numId || isNaN(numId) || numId <= 0) {
+      return { success: false, error: 'ID de romaneio inválido.' };
+    }
+
+    const pStmt = db.prepare('SELECT id FROM romaneio_pacotes WHERE romaneio_id = ?');
+    pStmt.bind([numId]);
+    const pacotes = [];
+    while (pStmt.step()) {
+      pacotes.push(pStmt.getAsObject().id);
+    }
+    pStmt.free();
+
+    for (const pacoteId of pacotes) {
+      const dItemStmt = db.prepare('DELETE FROM romaneio_itens WHERE pacote_id = ?');
+      dItemStmt.run([pacoteId]);
+      dItemStmt.free();
+    }
+
+    const dPacoteStmt = db.prepare('DELETE FROM romaneio_pacotes WHERE romaneio_id = ?');
+    dPacoteStmt.run([numId]);
+    dPacoteStmt.free();
+
+    const dRomStmt = db.prepare('DELETE FROM romaneios WHERE id = ?');
+    dRomStmt.run([numId]);
+    dRomStmt.free();
+
+    saveDB();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+protectedHandle('get-especies', () => {
+  try {
+    const stmt = db.prepare('SELECT id, nome, cientifico FROM especies ORDER BY nome ASC');
+    const results = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject());
+    }
+    stmt.free();
+    return { success: true, data: results };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// ─── IPC: AUTENTICAÇÃO OFFLINE / LICENÇA LOCAL ──────────────────────────────
+
+protectedHandle('save-local-license', (event, data) => {
+  try {
+    if (!data || !data.id || !data.email || !data.machine_id) {
+      return { success: false, error: 'Dados de licença local inválidos.' };
+    }
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO licenca_local 
+      (id, email, machine_id, status_licenca, data_validade, senha_hash, salt, ultimo_login) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run([
+      String(data.id),
+      String(data.email).trim().toLowerCase(),
+      String(data.machine_id),
+      String(data.status_licenca),
+      data.data_validade ? String(data.data_validade) : null,
+      String(data.senha_hash),
+      String(data.salt),
+      data.ultimo_login || new Date().toISOString()
+    ]);
+    stmt.free();
+    saveDB();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+protectedHandle('get-local-license', (event, email) => {
+  try {
+    if (!email) return { success: false, error: 'E-mail não fornecido.' };
+    const stmt = db.prepare('SELECT * FROM licenca_local WHERE LOWER(email) = ?');
+    stmt.bind([String(email).trim().toLowerCase()]);
+    const results = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject());
+    }
+    stmt.free();
+    return { success: true, data: results };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+protectedHandle('update-local-license-last-login', (event, id) => {
+  try {
+    if (!id) return { success: false, error: 'ID não fornecido.' };
+    const stmt = db.prepare('UPDATE licenca_local SET ultimo_login = ? WHERE id = ?');
+    stmt.run([new Date().toISOString(), String(id)]);
+    stmt.free();
     saveDB();
     return { success: true };
   } catch (error) {
@@ -636,29 +1229,96 @@ protectedHandle('update-romaneio', (event, data) => {
   }
 });
 
+// ─── CRIPTOGRAFIA DE BACKUPS (AES-256-GCM + PBKDF2) ──────────────────────────
+
+const BACKUP_MAGIC_HEADER = 'MTPRO_ENC_BACKUP_V1\n';
+
+function encryptBackupBuffer(rawBuffer, password) {
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(rawBuffer), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  const magicBuf = Buffer.from(BACKUP_MAGIC_HEADER, 'utf8');
+
+  // Estrutura: [Magic (20B)] + [Salt (16B)] + [IV (12B)] + [AuthTag (16B)] + [Ciphertext]
+  return Buffer.concat([magicBuf, salt, iv, authTag, encrypted]);
+}
+
+function decryptBackupBuffer(encryptedBuffer, password) {
+  const magicBuf = Buffer.from(BACKUP_MAGIC_HEADER, 'utf8');
+  const magicLen = magicBuf.length;
+
+  if (encryptedBuffer.length < magicLen + 16 + 12 + 16) {
+    throw new Error('Arquivo de backup criptografado inválido ou corrompido.');
+  }
+
+  const magicInFile = encryptedBuffer.subarray(0, magicLen).toString('utf8');
+  if (magicInFile !== BACKUP_MAGIC_HEADER) {
+    throw new Error('Formato de cabeçalho criptografado não reconhecido.');
+  }
+
+  let offset = magicLen;
+  const salt = encryptedBuffer.subarray(offset, offset + 16);
+  offset += 16;
+  const iv = encryptedBuffer.subarray(offset, offset + 12);
+  offset += 12;
+  const authTag = encryptedBuffer.subarray(offset, offset + 16);
+  offset += 16;
+  const ciphertext = encryptedBuffer.subarray(offset);
+
+  const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return decrypted;
+}
+
 // ─── IPC: BACKUP MANUAL ─────────────────────────────────────────────────────
 
-protectedHandle('backup-db', async (event, destPath) => {
+protectedHandle('backup-db', async (event, destPath, password) => {
   try {
     saveDB();
     const src = getDbFilePath();
     let finalDest = destPath;
+    const isEncrypted = typeof password === 'string' && password.trim().length > 0;
+
     if (!finalDest) {
+      const defaultExt = isEncrypted ? 'mtbk' : 'sqlite';
       const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-        title: 'Salvar Backup do Banco de Dados',
+        title: isEncrypted ? 'Salvar Backup Criptografado do Banco' : 'Salvar Backup do Banco de Dados',
         defaultPath: path.join(
           app.getPath('documents'),
-          `romaneios_backup_${new Date().toISOString().slice(0, 10)}.sqlite`
+          `romaneios_backup_${new Date().toISOString().slice(0, 10)}.${defaultExt}`
         ),
-        filters: [{ name: 'SQLite Database', extensions: ['sqlite', 'db'] }],
+        filters: isEncrypted
+          ? [
+              { name: 'Backup Protegido MTPRO (*.mtbk)', extensions: ['mtbk'] },
+              { name: 'Banco de Dados SQLite (*.sqlite)', extensions: ['sqlite', 'db'] },
+              { name: 'Todos os Arquivos', extensions: ['*'] }
+            ]
+          : [
+              { name: 'Banco de Dados SQLite (*.sqlite)', extensions: ['sqlite', 'db'] },
+              { name: 'Backup Protegido MTPRO (*.mtbk)', extensions: ['mtbk'] },
+              { name: 'Todos os Arquivos', extensions: ['*'] }
+            ],
       });
       if (canceled || !filePath) return { success: false, canceled: true };
       finalDest = filePath;
     }
-    fs.copyFileSync(src, finalDest);
+
+    if (isEncrypted) {
+      const rawBuffer = fs.readFileSync(src);
+      const encryptedBuffer = encryptBackupBuffer(rawBuffer, password.trim());
+      fs.writeFileSync(finalDest, encryptedBuffer);
+    } else {
+      fs.copyFileSync(src, finalDest);
+    }
+
     const cfg = readBackupConfig();
     writeBackupConfig({ ...cfg, lastManualBackup: new Date().toISOString() });
-    return { success: true, path: finalDest };
+    return { success: true, path: finalDest, encrypted: isEncrypted };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -666,14 +1326,14 @@ protectedHandle('backup-db', async (event, destPath) => {
 
 // ─── IPC: RESTAURAR BACKUP ──────────────────────────────────────────────────
 
-protectedHandle('restore-db', async (event, customFilePath) => {
+protectedHandle('restore-db', async (event, customFilePath, password) => {
   try {
     let targetFile = customFilePath;
     if (!targetFile) {
       const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
         title: 'Selecionar Arquivo de Backup para Restaurar',
         filters: [
-          { name: 'Banco de Dados SQLite', extensions: ['sqlite', 'db'] },
+          { name: 'Arquivos de Backup (*.sqlite, *.db, *.mtbk)', extensions: ['sqlite', 'db', 'mtbk'] },
           { name: 'Todos os Arquivos', extensions: ['*'] }
         ],
         properties: ['openFile']
@@ -688,7 +1348,34 @@ protectedHandle('restore-db', async (event, customFilePath) => {
       return { success: false, error: 'Arquivo de backup não encontrado no caminho especificado.' };
     }
 
-    const fileBuffer = fs.readFileSync(targetFile);
+    const rawFileBuffer = fs.readFileSync(targetFile);
+    const magicLen = Buffer.from(BACKUP_MAGIC_HEADER, 'utf8').length;
+    const isEncrypted = rawFileBuffer.length >= magicLen &&
+      rawFileBuffer.subarray(0, magicLen).toString('utf8') === BACKUP_MAGIC_HEADER;
+
+    let fileBuffer;
+    if (isEncrypted) {
+      if (!password || typeof password !== 'string' || password.trim().length === 0) {
+        return {
+          success: false,
+          requiresPassword: true,
+          path: targetFile,
+          error: 'Este backup está protegido por senha. Forneça a senha para descriptografar.'
+        };
+      }
+      try {
+        fileBuffer = decryptBackupBuffer(rawFileBuffer, password.trim());
+      } catch (decErr) {
+        return {
+          success: false,
+          invalidPassword: true,
+          path: targetFile,
+          error: 'Senha incorreta ou arquivo de backup corrompido.'
+        };
+      }
+    } else {
+      fileBuffer = rawFileBuffer;
+    }
 
     if (!SQLInstance) {
       SQLInstance = await initSqlJs();
@@ -698,7 +1385,7 @@ protectedHandle('restore-db', async (event, customFilePath) => {
     try {
       testDb = new SQLInstance.Database(fileBuffer);
     } catch (parseErr) {
-      return { success: false, error: 'O arquivo selecionado não é um banco de dados SQLite válido.' };
+      return { success: false, error: 'O arquivo selecionado não é um banco de dados SQLite válido ou a senha de descriptografia está incorreta.' };
     }
 
     // Verificar se as tabelas principais existem
@@ -1129,7 +1816,11 @@ ipcMain.handle('install-update', () => {
 ipcMain.handle('check-activation-status', () => {
   return {
     ativado: sistemaAtivado,
-    motivo: motivoBloqueio
+    motivo: motivoBloqueio,
+    isTrial: isTrial,
+    diasRestantes: trialDiasRestantes,
+    validade: licencaValidade,
+    hardwareId: getHardwareId()
   };
 });
 
@@ -1193,6 +1884,9 @@ ipcMain.handle('ativar-sistema', async (event, chaveDigitada) => {
 
     sistemaAtivado = true;
     motivoBloqueio = 'ok';
+    isTrial = false;
+    trialDiasRestantes = 0;
+    licencaValidade = expiraEm.toLocaleDateString('pt-BR');
     return { success: true, validade: expiraEm.toLocaleDateString('pt-BR') };
 
   } catch (err) {

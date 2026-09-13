@@ -16,6 +16,7 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
   loginWithSupabase: (email: string, password: string) => Promise<boolean>;
+  initTrialSession: (diasRestantes?: number, validade?: string, machineId?: string) => void;
   logout: () => Promise<void>;
   clearError: () => void;
 }
@@ -127,26 +128,21 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       // 6. Atualizar a cópia da licença localmente para permitir login offline futuro
-      if (window.electronAPI && typeof window.electronAPI.executeDB === 'function') {
+      if (window.electronAPI && typeof window.electronAPI.saveLocalLicense === 'function') {
         try {
           const salt = Math.random().toString(36).substring(2) + Date.now().toString(36);
           const senhaHash = await hashPassword(password, salt);
           
-          await window.electronAPI.executeDB(
-            `INSERT OR REPLACE INTO licenca_local 
-             (id, email, machine_id, status_licenca, data_validade, senha_hash, salt, ultimo_login) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              licenca.id,
-              emailLimpo,
-              licenca.machine_id,
-              licenca.status_licenca,
-              licenca.data_validade || null,
-              senhaHash,
-              salt,
-              new Date().toISOString()
-            ]
-          );
+          await window.electronAPI.saveLocalLicense({
+            id: licenca.id,
+            email: emailLimpo,
+            machine_id: licenca.machine_id,
+            status_licenca: licenca.status_licenca,
+            data_validade: licenca.data_validade || null,
+            senha_hash: senhaHash,
+            salt: salt,
+            ultimo_login: new Date().toISOString()
+          });
         } catch (dbErr) {
           console.error('Falha ao salvar dados de login offline localmente:', dbErr);
         }
@@ -185,15 +181,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     // Função interna auxiliar para tentar validar as credenciais offline no banco local
     async function tentarLoginOffline(emailLocal: string, senhaLocal: string, machineIdFisico: string): Promise<boolean> {
       try {
-        if (!window.electronAPI || typeof window.electronAPI.queryDB !== 'function') {
+        if (!window.electronAPI || typeof window.electronAPI.getLocalLicense !== 'function') {
           throw new Error('Sem conexão com a internet. O ambiente local não suporta login offline.');
         }
 
-        // Consultar banco SQLite local
-        const res = await window.electronAPI.queryDB<any>(
-          `SELECT * FROM licenca_local WHERE LOWER(email) = ?`,
-          [emailLocal]
-        );
+        // Consultar banco SQLite local via handler seguro
+        const res = await window.electronAPI.getLocalLicense(emailLocal);
 
         if (!res || !res.success || !res.data || res.data.length === 0) {
           throw new Error('Sem conexão com a internet. O primeiro acesso desse usuário precisa ser feito online.');
@@ -231,10 +224,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         }
 
         // Registrar último login offline
-        await window.electronAPI.executeDB(
-          `UPDATE licenca_local SET ultimo_login = ? WHERE id = ?`,
-          [new Date().toISOString(), localUser.id]
-        );
+        await window.electronAPI.updateLocalLicenseLastLogin(localUser.id);
 
         // Definir sucesso no estado como Modo Offline
         set({
@@ -244,7 +234,7 @@ export const useAuthStore = create<AuthState>((set) => ({
             email: localUser.email,
             machine_id: localUser.machine_id,
             status_licenca: localUser.status_licenca,
-            data_validade: localUser.data_validade
+            data_validade: localUser.data_validade ?? null
           },
           isOfflineMode: true,
           isLoading: false,
@@ -264,6 +254,22 @@ export const useAuthStore = create<AuthState>((set) => ({
         return false;
       }
     }
+  },
+
+  initTrialSession: (_diasRestantes, validade, machineId) => {
+    set({
+      isAuthenticated: true,
+      user: {
+        id: 'trial-user',
+        email: 'Modo Demonstração (Trial)',
+        machine_id: machineId || null,
+        status_licenca: 'trial',
+        data_validade: validade || null,
+      },
+      isOfflineMode: true,
+      isLoading: false,
+      error: null,
+    });
   },
 
   logout: async () => {

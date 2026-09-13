@@ -268,46 +268,18 @@ export default function VisualizarRomaneio() {
       if (!id) return;
       setCarregando(true);
       try {
-        const rResult = await window.electronAPI.queryDB(`
-          SELECT r.id, r.data, c.nome as cliente, r.total_m3, r.total_ml, r.tipo_romaneio FROM romaneios r LEFT JOIN clientes c ON r.cliente_id = c.id WHERE r.id = ?
-        `, [Number(id)]);
+        const res = await window.electronAPI.getRomaneioById(Number(id));
 
-        if (!rResult.success || !rResult.data || rResult.data.length === 0) {
-          Swal.fire({ icon: 'error', title: 'Erro', text: 'Romaneio não encontrado.' });
+        if (!res.success || !res.data) {
+          Swal.fire({ icon: 'error', title: 'Erro', text: res.error || 'Romaneio não encontrado.' });
           navigate('/');
           return;
         }
-        const romaneioBD = rResult.data[0];
 
-        const pResult = await window.electronAPI.queryDB(`
-          SELECT rp.*, COALESCE(e.nome, e_glob.nome) as especie FROM romaneio_pacotes rp LEFT JOIN especies e ON rp.especie_id = e.id LEFT JOIN romaneios r ON rp.romaneio_id = r.id LEFT JOIN especies e_glob ON r.especie_id = e_glob.id WHERE rp.romaneio_id = ? ORDER BY rp.numero_pacote
-        `, [Number(id)]);
-        const pacotesBD = pResult.data || [];
+        const romaneioBD = res.data;
+        const pacotesBD = romaneioBD.pacotes || [];
 
-        if (pacotesBD.length > 0) {
-          const pacoteIds = pacotesBD.map((p: any) => p.id);
-          const placeholders = pacoteIds.map(() => '?').join(',');
-          const iResult = await window.electronAPI.queryDB(
-            `SELECT * FROM romaneio_itens WHERE pacote_id IN (${placeholders}) ORDER BY id`,
-            pacoteIds
-          );
-          const itensMap = new Map<any, any[]>();
-          (iResult.data || []).forEach((item: any) => {
-            const list = itensMap.get(item.pacote_id) || [];
-            list.push(item);
-            itensMap.set(item.pacote_id, list);
-          });
-          for (const pacote of pacotesBD) {
-            pacote.itens = itensMap.get(pacote.id) || [];
-          }
-        }
-
-        const temEspecieNosPacotes = pacotesBD.some((p: Record<string, unknown>) => p.especie);
-        const especiesConsolidadas = temEspecieNosPacotes
-          ? Array.from(new Set(pacotesBD.map((p: Record<string, unknown>) => p.especie).filter(Boolean))).join(', ')
-          : 'Sem espécie';
-
-        setRomaneio({ ...romaneioBD, especie: especiesConsolidadas });
+        setRomaneio(romaneioBD);
         setPacotes(pacotesBD);
       } catch {
         Swal.fire({ icon: 'error', title: 'Erro', text: 'Falha ao carregar o romaneio.' });

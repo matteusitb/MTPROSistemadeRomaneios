@@ -57,6 +57,7 @@ const InputEspessura = React.memo(({ item, onChangeGlobal, onBlurGlobal, onKeyDo
   return (
     <input
       type="text"
+      data-field="espessura"
       className="w-full p-2.5 text-center bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl hover:border-emerald-300 dark:hover:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-bold text-slate-800 dark:text-slate-100 shadow-sm text-sm"
       value={localValue}
       onFocus={() => { isFocusedRef.current = true; }}
@@ -120,6 +121,7 @@ const InputLargura = React.memo(
         <input
           ref={ref}
           type="text"
+          data-field="largura"
           className="w-full p-2.5 text-center bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl hover:border-emerald-300 dark:hover:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-bold text-slate-800 dark:text-slate-100 shadow-sm text-sm"
           value={localValue}
           onFocus={() => { isFocusedRef.current = true; }}
@@ -193,6 +195,7 @@ const InputComprimento = React.memo(
         <input
           ref={ref}
           type="text"
+          data-field="comprimento"
           className="w-full p-2.5 text-center bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl hover:border-emerald-300 dark:hover:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-bold text-slate-800 dark:text-slate-100 shadow-sm text-sm"
           value={isFocused ? localValue : formatComprimento(item.comprimento)}
           onFocus={handleFocus}
@@ -245,6 +248,7 @@ const InputQuantidade = React.memo(({ item, tipoRomaneio, onChangeGlobal, onBlur
   return (
     <input
       type="text"
+      data-field="quantidade"
       disabled={isAberta}
       className={`w-full p-2.5 text-center border rounded-xl outline-none transition-all font-bold shadow-sm text-sm ${
         isAberta
@@ -558,19 +562,74 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
   }, [pacoteId, removeItem]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent, item: RomaneioItem) => {
+    const target = e.currentTarget as HTMLInputElement;
+    const field = target.getAttribute('data-field') as keyof RomaneioItem | null;
+    const currentRow = target.closest('tr');
+    const tbody = currentRow?.parentElement;
+
     if (e.key === 'Enter') {
       e.preventDefault();
-      (document.activeElement as HTMLInputElement)?.blur();
-      if (!item.espessura || !item.largura || !item.comprimento || !item.quantidade) {
-        Swal.fire({
-          icon: 'warning',
-          title: 'Linha incompleta',
-          text: 'Preencha todos os campos da linha atual antes de adicionar uma nova.',
-          confirmButtonColor: '#059669',
-          customClass: { popup: 'rounded-3xl', confirmButton: 'rounded-xl font-bold px-6 py-3' }
-        });
-      } else {
-        addItem(pacoteId);
+      if (!field || !currentRow || !tbody) return;
+
+      if (field === 'espessura') {
+        const nextInput = currentRow.querySelector<HTMLInputElement>('input[data-field="largura"]');
+        nextInput?.focus();
+        nextInput?.select();
+      } else if (field === 'largura') {
+        const nextInput = currentRow.querySelector<HTMLInputElement>('input[data-field="comprimento"]');
+        nextInput?.focus();
+        nextInput?.select();
+      } else if (field === 'comprimento') {
+        if (tipoRomaneioRef.current === 'aberta') {
+          // Na cubagem aberta, comprimento é o último campo da linha
+          const nextRow = currentRow.nextElementSibling as HTMLTableRowElement | null;
+          if (nextRow) {
+            const nextInput = nextRow.querySelector<HTMLInputElement>('input[data-field="largura"]') || nextRow.querySelector<HTMLInputElement>('input[data-field="espessura"]');
+            nextInput?.focus();
+            nextInput?.select();
+          } else {
+            // Última linha do pacote
+            if (item.largura && item.comprimento) {
+              addItem(pacoteId);
+            }
+          }
+        } else {
+          const nextInput = currentRow.querySelector<HTMLInputElement>('input[data-field="quantidade"]');
+          nextInput?.focus();
+          nextInput?.select();
+        }
+      } else if (field === 'quantidade') {
+        const nextRow = currentRow.nextElementSibling as HTMLTableRowElement | null;
+        if (nextRow) {
+          const nextInput = nextRow.querySelector<HTMLInputElement>('input[data-field="largura"]') || nextRow.querySelector<HTMLInputElement>('input[data-field="espessura"]');
+          nextInput?.focus();
+          nextInput?.select();
+        } else {
+          // Última linha do pacote
+          if (item.espessura && item.largura && item.comprimento && item.quantidade) {
+            addItem(pacoteId);
+          }
+        }
+      }
+    } else if (e.key === 'ArrowDown') {
+      if (currentRow && field) {
+        const nextRow = currentRow.nextElementSibling as HTMLTableRowElement | null;
+        if (nextRow) {
+          e.preventDefault();
+          const nextInput = nextRow.querySelector<HTMLInputElement>(`input[data-field="${field}"]`);
+          nextInput?.focus();
+          nextInput?.select();
+        }
+      }
+    } else if (e.key === 'ArrowUp') {
+      if (currentRow && field) {
+        const prevRow = currentRow.previousElementSibling as HTMLTableRowElement | null;
+        if (prevRow) {
+          e.preventDefault();
+          const prevInput = prevRow.querySelector<HTMLInputElement>(`input[data-field="${field}"]`);
+          prevInput?.focus();
+          prevInput?.select();
+        }
       }
     } else if (e.key === 'd' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();

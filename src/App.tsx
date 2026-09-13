@@ -8,12 +8,26 @@ import VisualizarRomaneio from './screens/VisualizarRomaneio';
 import Configuracoes from './screens/Configuracoes';
 import Login from './screens/Login';
 import Ativacao from './screens/Ativacao';
+import { ModalAtivacao } from './components/ModalAtivacao';
 import { useAuthStore } from './store/useAuthStore';
-import { Menu, User, Loader2 } from 'lucide-react';
+import { Menu, User, Loader2, Zap } from 'lucide-react';
 
-function MainLayout() {
+interface MainLayoutProps {
+  activationInfo: {
+    ativado: boolean;
+    motivo: 'unactivated' | 'expired' | 'fraud' | 'ok';
+    isTrial?: boolean;
+    diasRestantes?: number;
+    validade?: string;
+    hardwareId?: string;
+  };
+  onRecheckActivation: () => void;
+}
+
+function MainLayout({ activationInfo, onRecheckActivation }: MainLayoutProps) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [modalAtivacaoAberto, setModalAtivacaoAberto] = useState(false);
   const user = useAuthStore((state) => state.user);
 
   useEffect(() => {
@@ -29,8 +43,6 @@ function MainLayout() {
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
-
-
 
   const getPageTitle = () => {
     const path = location.pathname;
@@ -66,8 +78,21 @@ function MainLayout() {
             <h2 id="view-title">{getPageTitle()}</h2>
           </div>
 
-          {/* Área Direita do Header (Informações de Perfil / Status) */}
+          {/* Área Direita do Header (Informações de Perfil / Status / Trial) */}
           <div className="header-right">
+            {activationInfo.isTrial && (
+              <button
+                type="button"
+                onClick={() => setModalAtivacaoAberto(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-xs font-black transition-all cursor-pointer shadow-xs hover:scale-105"
+                title="Versão de avaliação. Clique para ativar a chave de licença completa."
+              >
+                <Zap size={14} className="animate-pulse text-amber-500" />
+                <span>Trial: {activationInfo.diasRestantes ?? 7} dia{(activationInfo.diasRestantes ?? 7) === 1 ? '' : 's'}</span>
+                <span className="bg-amber-500 text-slate-900 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase ml-0.5">Ativar</span>
+              </button>
+            )}
+
             <div className="user-info">
               <User />
               <span>{user?.email || 'Administrador'}</span>
@@ -75,7 +100,7 @@ function MainLayout() {
           </div>
         </header>
 
-        {/* CONTAINER ONDE AS VIEWS DINÂMICAS SERÃO CARREGADAS */}
+        {/* CONTAINER ONDE AS VIEWS DINÂMICAS SERÃO CARREGADAS */}
         <main id="dynamic-content">
           <Routes>
             <Route path="/" element={<Home />} />
@@ -86,14 +111,35 @@ function MainLayout() {
           </Routes>
         </main>
       </div>
+
+      {/* Modal de Ativação Rápida */}
+      <ModalAtivacao
+        isOpen={modalAtivacaoAberto}
+        onClose={() => setModalAtivacaoAberto(false)}
+        onActivated={() => {
+          setModalAtivacaoAberto(false);
+          onRecheckActivation();
+        }}
+        diasRestantes={activationInfo.diasRestantes}
+        validade={activationInfo.validade}
+      />
     </div>
   );
 }
 
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const initTrialSession = useAuthStore((state) => state.initTrialSession);
   const [isActivated, setIsActivated] = useState(false);
   const [activationMotivo, setActivationMotivo] = useState<'unactivated' | 'expired' | 'fraud' | 'ok'>('unactivated');
+  const [activationInfo, setActivationInfo] = useState<{
+    ativado: boolean;
+    motivo: 'unactivated' | 'expired' | 'fraud' | 'ok';
+    isTrial?: boolean;
+    diasRestantes?: number;
+    validade?: string;
+    hardwareId?: string;
+  }>({ ativado: false, motivo: 'unactivated' });
   const [checkingActivation, setCheckingActivation] = useState(true);
 
   // Aplica o tema salvo no localStorage
@@ -112,14 +158,20 @@ function App() {
         const res = await window.electronAPI.checkActivationStatus();
         setIsActivated(res.ativado);
         setActivationMotivo(res.motivo);
+        setActivationInfo(res);
+        if (res.ativado && res.isTrial) {
+          initTrialSession(res.diasRestantes, res.validade, res.hardwareId);
+        }
       } else {
         setIsActivated(true);
         setActivationMotivo('ok');
+        setActivationInfo({ ativado: true, motivo: 'ok', isTrial: false });
       }
     } catch (e) {
       console.error('Erro ao verificar licença:', e);
       setIsActivated(true);
       setActivationMotivo('ok');
+      setActivationInfo({ ativado: true, motivo: 'ok', isTrial: false });
     } finally {
       setCheckingActivation(false);
     }
@@ -148,7 +200,7 @@ function App() {
 
   return (
     <HashRouter>
-      <MainLayout />
+      <MainLayout activationInfo={activationInfo} onRecheckActivation={checkActivation} />
     </HashRouter>
   );
 }

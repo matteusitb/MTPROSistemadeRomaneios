@@ -155,7 +155,7 @@ export default function NovoRomaneio() {
   useEffect(() => {
     const buscarEspecies = async () => {
       try {
-        const res = await window.electronAPI.queryDB('SELECT * FROM especies ORDER BY nome');
+        const res = await window.electronAPI.getEspecies();
         if (res.success && res.data) setEspeciesList(res.data);
       } catch (err) {
         console.error('Erro ao buscar espécies', err);
@@ -445,11 +445,11 @@ export default function NovoRomaneio() {
   // Atalhos de teclado globais
   useEffect(() => {
     const handleKeyDownGlobal = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         salvarRomaneio();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      if (e.key === 'F2' || ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'b' || e.key === 'Enter'))) {
         e.preventDefault();
         handleAddPacote();
       }
@@ -472,7 +472,7 @@ export default function NovoRomaneio() {
 
   return (
     <>
-      <div className="space-y-6 max-w-7xl mx-auto pb-24">
+      <div className="w-full mx-auto space-y-8 pb-32 page-transition">
         {/* Banner de Rascunho Recuperável */}
         <AnimatePresence>
           {temRascunhoAviso && (
