@@ -30,3 +30,6 @@ jobs:
         run: npm run electron:release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_SUPABASE_URL: https://hmuxkqtgyyglafqlqggv.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_G--VZElf06QOrBbxIFKvhA_GE1eOJwI
+

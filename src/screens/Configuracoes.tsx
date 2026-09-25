@@ -71,7 +71,7 @@ export default function Configuracoes() {
   const [downloadProgress, setDownloadProgress] = useState<{ percent: number; bytesPerSecond: number; transferred: number; total: number } | null>(null);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
   const [checkingError, setCheckingError] = useState<string | null>(null);
-  const [appVersion, setAppVersion] = useState('1.0.9');
+  const [appVersion, setAppVersion] = useState('1.0.10');
 
   useEffect(() => {
     carregarDados();
