@@ -830,7 +830,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
-      devTools: isDev,
+      devTools: true,
     },
   });
 
@@ -844,37 +844,44 @@ function createWindow() {
     return { action: 'allow' };
   });
 
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('Falha ao carregar interface:', errorCode, errorDescription, validatedURL);
+  });
+
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
     Menu.setApplicationMenu(null);
-    
-    // Bloquear estritamente qualquer tentativa de abertura do DevTools em produção
-    mainWindow.webContents.on('devtools-opened', () => {
-      mainWindow.webContents.closeDevTools();
-    });
 
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-      const isDevKey = (
-        input.key === 'F12' ||
-        ((input.control || input.meta) && input.shift && ['i', 'r', 'j', 'c'].includes(input.key.toLowerCase())) ||
-        ((input.control || input.meta) && input.alt && ['i', 'j', 'c'].includes(input.key.toLowerCase())) ||
-        ((input.control || input.meta) && ['u'].includes(input.key.toLowerCase()))
-      );
-      if (isDevKey) {
-        event.preventDefault();
-      }
-    });
-
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    const primaryPath = path.join(app.getAppPath(), 'dist', 'index.html');
+    if (fs.existsSync(primaryPath)) {
+      mainWindow.loadFile(primaryPath);
+    } else {
+      mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    }
   }
 }
 
 app.whenReady().then(async () => {
-  await initDB();
-  await verificarLicencaLocal();
-  scheduleAutoBackup();
+  try {
+    await initDB();
+  } catch (err) {
+    console.error('Erro na inicialização do banco SQLite:', err.message);
+  }
+
+  try {
+    await verificarLicencaLocal();
+  } catch (err) {
+    console.error('Erro na verificação de licença:', err.message);
+  }
+
+  try {
+    scheduleAutoBackup();
+  } catch (err) {
+    console.error('Erro no agendamento de backup:', err.message);
+  }
+
   createWindow();
 
   // Verificação automática de atualizações ao inicializar (em produção)
