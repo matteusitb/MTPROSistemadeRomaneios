@@ -790,40 +790,60 @@ export default function NovoRomaneio() {
                   </div>
 
                   <div className="space-y-4">
-                    <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                      Consolidado por Bitola (Seção)
+                    <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                      <span>Consolidado por Bitola e Comprimento</span>
+                      <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[9px] px-1.5 py-0.5 rounded-full font-bold">
+                        {resumos.porBitolaComprimento.length} {resumos.porBitolaComprimento.length === 1 ? 'dimensão' : 'dimensões'}
+                      </span>
                     </h4>
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]">
                       <table className="w-full text-xs text-left">
                         <thead className="bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 uppercase font-black tracking-widest border-b border-slate-200 dark:border-slate-800 text-[9px]">
                           <tr>
-                            <th className="px-5 py-3.5">Espécie</th>
-                            <th className="px-5 py-3.5 text-center">Bitola (cm)</th>
-                            <th className="px-5 py-3.5 text-center">Peças</th>
-                            <th className="px-5 py-3.5 text-center">Total ML</th>
-                            <th className="px-5 py-3.5 text-center">Total M³</th>
-                            <th className="px-5 py-3.5 text-center w-20">% Vol</th>
+                            <th className="px-4 py-3.5">Espécie</th>
+                            <th className="px-4 py-3.5 text-center">Dimensão (Esp × Larg × Comp)</th>
+                            <th className="px-4 py-3.5 text-center">Peças</th>
+                            <th className="px-4 py-3.5 text-center">Total ML</th>
+                            <th className="px-4 py-3.5 text-center">Total M³</th>
+                            <th className="px-4 py-3.5 text-center w-20">% Vol</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-600 dark:text-slate-300 font-semibold">
-                          {resumos.porBitola.map((item, idx) => (
+                          {resumos.porBitolaComprimento.map((item, idx) => (
                             <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                              <td className="px-5 py-3 text-slate-800 dark:text-slate-100">{item.especie}</td>
-                              <td className="px-5 py-3 text-center font-black text-slate-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-950/25">
-                                {item.espessura} <span className="text-[10px] text-slate-400 font-bold mx-0.5">X</span>{' '}
-                                {item.largura}
+                              <td className="px-4 py-3 text-slate-800 dark:text-slate-100 font-bold">{item.especie}</td>
+                              <td className="px-4 py-3 text-center font-black text-slate-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-950/25">
+                                <span className="text-blue-600 dark:text-blue-400">{item.espessura.toString().replace('.', ',')}</span>
+                                <span className="text-[10px] text-slate-400 font-bold mx-1">×</span>
+                                <span className="text-indigo-600 dark:text-indigo-400">{item.largura.toString().replace('.', ',')}</span>
+                                <span className="text-[10px] text-slate-400 font-bold mx-1">×</span>
+                                <span className="text-amber-600 dark:text-amber-400">
+                                  {Number(item.comprimento).toFixed(2).replace('.', ',')}{tipoRomaneio === 'pes' ? '\'' : 'm'}
+                                </span>
                               </td>
-                              <td className="px-5 py-3 text-center">{item.totalPecas}</td>
-                              <td className="px-5 py-3 text-center">{item.totalMl.toFixed(2)}</td>
-                              <td className="px-5 py-3 text-center font-black text-emerald-600 dark:text-emerald-450">
-                                {item.totalM3.toFixed(3)}
+                              <td className="px-4 py-3 text-center">{item.totalPecas}</td>
+                              <td className="px-4 py-3 text-center">{item.totalMl.toFixed(2).replace('.', ',')}</td>
+                              <td className="px-4 py-3 text-center font-black text-emerald-600 dark:text-emerald-450">
+                                {item.totalM3.toFixed(3).replace('.', ',')}
                               </td>
-                              <td className="px-5 py-3 text-center text-slate-400 dark:text-slate-500">
+                              <td className="px-4 py-3 text-center text-slate-400 dark:text-slate-500">
                                 {item.percentual.toFixed(1)}%
                               </td>
                             </tr>
                           ))}
                         </tbody>
+                        <tfoot className="bg-slate-50/70 dark:bg-slate-950/50 border-t border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 font-black">
+                          <tr>
+                            <td className="px-4 py-2.5 uppercase text-[10px] tracking-wider text-slate-500 dark:text-slate-400">Total</td>
+                            <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400 text-[10px]">
+                              {resumos.porBitolaComprimento.length} combinações
+                            </td>
+                            <td className="px-4 py-2.5 text-center">{resumos.totalPecasGeral}</td>
+                            <td className="px-4 py-2.5 text-center">{resumos.totalMlGeral.toFixed(2).replace('.', ',')}</td>
+                            <td className="px-4 py-2.5 text-center text-emerald-600 dark:text-emerald-450">{resumos.totalVolumeGeral.toFixed(3).replace('.', ',')}</td>
+                            <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400">100%</td>
+                          </tr>
+                        </tfoot>
                       </table>
                     </div>
                   </div>

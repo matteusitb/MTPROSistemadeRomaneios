@@ -44,6 +44,17 @@ export interface ResumoBitola {
   percentual: number;
 }
 
+export interface ResumoBitolaComprimento {
+  especie: string;
+  espessura: number;
+  largura: number;
+  comprimento: number;
+  totalMl: number;
+  totalM3: number;
+  totalPecas: number;
+  percentual: number;
+}
+
 export interface ResumoLargura {
   especie: string;
   largura: number;
@@ -56,6 +67,7 @@ export interface ResumoLargura {
 export interface ResumoConsolidadoGeral {
   porEspecie: ResumoEspecie[];
   porBitola: ResumoBitola[];
+  porBitolaComprimento: ResumoBitolaComprimento[];
   porLargura: ResumoLargura[];
   totalMadeiraLongaM3: number;
   totalShortM3: number;
@@ -238,6 +250,7 @@ export function calcularTotaisPacote(itens: any[], tipoRomaneio?: string): {
 export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: string): ResumoConsolidadoGeral {
   const resumoEspecieMap: { [key: string]: { especie: string; totalMl: number; totalM3: number; totalPecas: number } } = {};
   const resumoBitolaMap: { [key: string]: { especie: string; espessura: number; largura: number; totalMl: number; totalM3: number; totalPecas: number } } = {};
+  const resumoBitolaComprimentoMap: { [key: string]: { especie: string; espessura: number; largura: number; comprimento: number; totalMl: number; totalM3: number; totalPecas: number } } = {};
   const resumoLarguraMap: { [key: string]: { especie: string; largura: number; totalMl: number; totalM3: number; totalPecas: number } } = {};
 
   let totalMadeiraLongaM3 = 0;
@@ -297,6 +310,14 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
           resumoBitolaMap[bitolaKey].totalM3 += m3;
           resumoBitolaMap[bitolaKey].totalPecas += 1;
 
+          const bitolaCompKey = `${especie}_${e}_${l}_${c}`;
+          if (!resumoBitolaComprimentoMap[bitolaCompKey]) {
+            resumoBitolaComprimentoMap[bitolaCompKey] = { especie, espessura: e, largura: l, comprimento: c, totalMl: 0, totalM3: 0, totalPecas: 0 };
+          }
+          resumoBitolaComprimentoMap[bitolaCompKey].totalMl += ml;
+          resumoBitolaComprimentoMap[bitolaCompKey].totalM3 += m3;
+          resumoBitolaComprimentoMap[bitolaCompKey].totalPecas += 1;
+
           const larguraKey = `${especie}_${l}`;
           if (!resumoLarguraMap[larguraKey]) {
             resumoLarguraMap[larguraKey] = { especie, largura: l, totalMl: 0, totalM3: 0, totalPecas: 0 };
@@ -338,6 +359,14 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
         resumoBitolaMap[bitolaKey].totalM3 += m3;
         resumoBitolaMap[bitolaKey].totalPecas += q;
 
+        const bitolaCompKey = `${especie}_${e}_${l}_${c}`;
+        if (!resumoBitolaComprimentoMap[bitolaCompKey]) {
+          resumoBitolaComprimentoMap[bitolaCompKey] = { especie, espessura: e, largura: l, comprimento: c, totalMl: 0, totalM3: 0, totalPecas: 0 };
+        }
+        resumoBitolaComprimentoMap[bitolaCompKey].totalMl += ml;
+        resumoBitolaComprimentoMap[bitolaCompKey].totalM3 += m3;
+        resumoBitolaComprimentoMap[bitolaCompKey].totalPecas += q;
+
         const larguraKey = `${especie}_${l}`;
         if (!resumoLarguraMap[larguraKey]) {
           resumoLarguraMap[larguraKey] = { especie, largura: l, totalMl: 0, totalM3: 0, totalPecas: 0 };
@@ -367,6 +396,18 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
       percentual: totalVolumeGeral > 0 ? (x.totalM3 / totalVolumeGeral) * 100 : 0
     }));
 
+  const porBitolaComprimento: ResumoBitolaComprimento[] = Object.values(resumoBitolaComprimentoMap)
+    .sort((a, b) => {
+      if (a.especie !== b.especie) return a.especie.localeCompare(b.especie);
+      if (a.espessura !== b.espessura) return b.espessura - a.espessura;
+      if (a.largura !== b.largura) return b.largura - a.largura;
+      return b.comprimento - a.comprimento;
+    })
+    .map(x => ({
+      ...x,
+      percentual: totalVolumeGeral > 0 ? (x.totalM3 / totalVolumeGeral) * 100 : 0
+    }));
+
   const porLargura: ResumoLargura[] = Object.values(resumoLarguraMap)
     .sort((a, b) => {
       if (a.especie !== b.especie) return a.especie.localeCompare(b.especie);
@@ -380,6 +421,7 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
   return {
     porEspecie,
     porBitola,
+    porBitolaComprimento,
     porLargura,
     totalMadeiraLongaM3,
     totalShortM3,

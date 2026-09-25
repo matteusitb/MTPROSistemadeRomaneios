@@ -5,7 +5,7 @@ import {
   FileSpreadsheet, Tag
 } from 'lucide-react';
 import Swal from 'sweetalert2';
-import { gerarPdfRomaneio, gerarPdfResumoConsolidado } from '../utils/pdfGenerator';
+import { gerarPdfRomaneio, gerarPdfResumoConsolidado, gerarPdfResumoDetalhadoBitola } from '../utils/pdfGenerator';
 import { motion } from 'framer-motion';
 import { ModalWhatsApp, WhatsAppIcon } from '../components/ModalWhatsApp';
 import { ModalEtiquetaPacote } from '../components/ModalEtiquetaPacote';
@@ -122,6 +122,7 @@ export default function VisualizarRomaneio() {
   const [abaAtiva, setAbaAtiva] = useState('resumo');
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [gerandoPdfResumo, setGerandoPdfResumo] = useState(false);
+  const [gerandoPdfDetalhado, setGerandoPdfDetalhado] = useState(false);
 
   const gerarPDFResumo = () => {
     if (!romaneio || pacotes.length === 0) return;
@@ -142,6 +143,30 @@ export default function VisualizarRomaneio() {
         Swal.fire({ icon: 'error', title: 'Erro', text: 'Falha ao gerar o PDF do resumo consolidado.', customClass: { popup: 'rounded-3xl' } });
       } finally {
         setGerandoPdfResumo(false);
+      }
+    }, 100);
+  };
+
+  const gerarPDFDetalhado = () => {
+    if (!romaneio || pacotes.length === 0) return;
+    setGerandoPdfDetalhado(true);
+    Swal.fire({
+      title: 'Gerando Resumo Detalhado...',
+      text: 'Compilando dimensões e comprimentos...',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading()
+    });
+
+    setTimeout(() => {
+      try {
+        const pdfDoc = gerarPdfResumoDetalhadoBitola(romaneio, pacotes);
+        pdfDoc.download(`Resumo_Detalhado_Bitolas_Romaneio_${romaneio.id.toString().padStart(4, '0')}.pdf`);
+        Swal.close();
+      } catch (err) {
+        console.error(err);
+        Swal.fire({ icon: 'error', title: 'Erro', text: 'Falha ao gerar o PDF do resumo detalhado.', customClass: { popup: 'rounded-3xl' } });
+      } finally {
+        setGerandoPdfDetalhado(false);
       }
     }, 100);
   };
@@ -519,15 +544,29 @@ export default function VisualizarRomaneio() {
               </div>
 
               <div className="space-y-4">
-                <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                  Consolidado por Bitola (Seção)
-                </h4>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <span>Consolidado por Bitola (Seção) e Comprimento</span>
+                    <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[9px] px-1.5 py-0.5 rounded-full font-bold">
+                      {resumos.porBitolaComprimento.length} {resumos.porBitolaComprimento.length === 1 ? 'dimensão' : 'dimensões'}
+                    </span>
+                  </h4>
+                  <button
+                    onClick={gerarPDFDetalhado}
+                    disabled={gerandoPdfDetalhado}
+                    className="px-3 py-1.5 rounded-xl font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white dark:hover:bg-emerald-600 dark:hover:text-white border border-emerald-200/60 dark:border-emerald-800/40 transition-all flex items-center gap-1.5 text-xs shadow-sm cursor-pointer hover:shadow-md active:scale-95 disabled:opacity-50"
+                    title="Exportar PDF exclusivo deste Resumo Detalhado por Bitola e Comprimento"
+                  >
+                    <FileDown size={14} strokeWidth={2.5} />
+                    {gerandoPdfDetalhado ? 'Gerando...' : 'Exportar Detalhado (PDF)'}
+                  </button>
+                </div>
                 <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)]">
                   <table className="w-full text-xs text-left">
                     <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 uppercase text-[9px] font-black tracking-widest border-b border-slate-200 dark:border-slate-800">
                       <tr>
                         <th className="px-5 py-4">Espécie</th>
-                        <th className="px-5 py-4 text-center">Bitola (cm)</th>
+                        <th className="px-5 py-4 text-center">Dimensão (Esp × Larg × Comp)</th>
                         <th className="px-5 py-4 text-center">Peças</th>
                         <th className="px-5 py-4 text-center">Total ML</th>
                         <th className="px-5 py-4 text-center">Total M³</th>
@@ -535,11 +574,17 @@ export default function VisualizarRomaneio() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                      {resumos.porBitola.map((item, idx) => (
+                      {resumos.porBitolaComprimento.map((item, idx) => (
                         <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
                           <td className="px-5 py-3.5 text-slate-800 dark:text-slate-100 font-bold">{item.especie}</td>
                           <td className="px-5 py-3.5 text-center font-black text-slate-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-950/20">
-                            {item.espessura} <span className="text-[10px] text-slate-400 font-bold mx-0.5">X</span> {item.largura}
+                            <span className="text-blue-600 dark:text-blue-400">{item.espessura.toString().replace('.', ',')}</span>
+                            <span className="text-[10px] text-slate-400 font-bold mx-1">×</span>
+                            <span className="text-indigo-600 dark:text-indigo-400">{item.largura.toString().replace('.', ',')}</span>
+                            <span className="text-[10px] text-slate-400 font-bold mx-1">×</span>
+                            <span className="text-amber-600 dark:text-amber-400">
+                              {Number(item.comprimento).toFixed(2).replace('.', ',')}{romaneio?.tipo_romaneio === 'pes' ? '\'' : 'm'}
+                            </span>
                           </td>
                           <td className="px-5 py-3.5 text-center font-semibold">{item.totalPecas}</td>
                           <td className="px-5 py-3.5 text-center font-semibold">{item.totalMl.toFixed(2).replace('.', ',')}</td>
@@ -548,6 +593,18 @@ export default function VisualizarRomaneio() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot className="bg-slate-50/70 dark:bg-slate-950/50 border-t border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 font-black">
+                      <tr>
+                        <td className="px-5 py-3 uppercase text-[10px] tracking-wider text-slate-500 dark:text-slate-400">Total</td>
+                        <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-400 text-[10px]">
+                          {resumos.porBitolaComprimento.length} combinações
+                        </td>
+                        <td className="px-5 py-3 text-center">{resumos.totalPecasGeral}</td>
+                        <td className="px-5 py-3 text-center">{resumos.totalMlGeral.toFixed(2).replace('.', ',')}</td>
+                        <td className="px-5 py-3 text-center text-emerald-600 dark:text-emerald-450">{resumos.totalVolumeGeral.toFixed(3).replace('.', ',')}</td>
+                        <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-400">100%</td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               </div>
