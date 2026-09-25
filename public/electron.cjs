@@ -877,6 +877,18 @@ app.whenReady().then(async () => {
   scheduleAutoBackup();
   createWindow();
 
+  // Verificação automática de atualizações ao inicializar (em produção)
+  if (app.isPackaged) {
+    setTimeout(() => {
+      try {
+        console.log('🔍 Checando atualizações automaticamente no GitHub...');
+        autoUpdater.checkForUpdates();
+      } catch (err) {
+        console.warn('⚠️ Falha na checagem automática de atualização:', err.message);
+      }
+    }, 4000);
+  }
+
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -1717,7 +1729,8 @@ ipcMain.handle('get-app-version', () => {
 
 // ─── AUTO UPDATER CONFIG & LISTENERS ─────────────────────────────────────────
 
-autoUpdater.autoDownload = false;
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
 autoUpdater.logger = console;
 
 autoUpdater.on('checking-for-update', () => {

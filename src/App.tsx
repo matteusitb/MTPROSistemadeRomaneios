@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Component, type ErrorInfo, type ReactNode } from 'react';
 import { HashRouter, Routes, Route, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Home from './screens/Home';
@@ -10,7 +10,58 @@ import Login from './screens/Login';
 import Ativacao from './screens/Ativacao';
 import { ModalAtivacao } from './components/ModalAtivacao';
 import { useAuthStore } from './store/useAuthStore';
-import { Menu, User, Loader2, Zap } from 'lucide-react';
+import { Menu, User, Loader2, Zap, RefreshCw, AlertTriangle } from 'lucide-react';
+import Swal from 'sweetalert2';
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('ErrorBoundary capturou erro:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-6 font-sans">
+          <div className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 shadow-xl text-center space-y-4">
+            <div className="w-16 h-16 bg-red-100 dark:bg-red-950/50 text-red-600 rounded-2xl flex items-center justify-center mx-auto">
+              <AlertTriangle size={32} />
+            </div>
+            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Ops! Ocorreu um erro inesperado</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/60 p-3 rounded-xl font-mono text-left break-all max-h-32 overflow-y-auto">
+              {this.state.error?.message || 'Erro desconhecido.'}
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20"
+            >
+              <RefreshCw size={16} />
+              Recarregar Aplicativo
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface MainLayoutProps {
   activationInfo: {
@@ -152,6 +203,33 @@ function App() {
     }
   }, []);
 
+  // Listener global de Atualização Automática Pronta para Instalar
+  useEffect(() => {
+    if (window.electronAPI && typeof window.electronAPI.onUpdateDownloaded === 'function') {
+      const unsubscribeDownloaded = window.electronAPI.onUpdateDownloaded(() => {
+        Swal.fire({
+          title: '🎉 Atualização Pronta!',
+          text: 'Uma nova versão do sistema foi baixada e está pronta para ser instalada. Deseja reiniciar agora para aplicar?',
+          icon: 'info',
+          showCancelButton: true,
+          confirmButtonColor: '#059669',
+          cancelButtonColor: '#64748b',
+          confirmButtonText: 'Reiniciar e Atualizar Agora',
+          cancelButtonText: 'Lembrar Mais Tarde',
+          customClass: { popup: 'rounded-3xl' }
+        }).then((result) => {
+          if (result.isConfirmed) {
+            window.electronAPI.installUpdate();
+          }
+        });
+      });
+
+      return () => {
+        unsubscribeDownloaded();
+      };
+    }
+  }, []);
+
   const checkActivation = async () => {
     try {
       if (window.electronAPI && typeof window.electronAPI.checkActivationStatus === 'function') {
@@ -191,18 +269,29 @@ function App() {
   }
 
   if (!isActivated) {
-    return <Ativacao onActivated={checkActivation} motivo={activationMotivo} />;
+    return (
+      <ErrorBoundary>
+        <Ativacao onActivated={checkActivation} motivo={activationMotivo} />
+      </ErrorBoundary>
+    );
   }
 
   if (!isAuthenticated) {
-    return <Login />;
+    return (
+      <ErrorBoundary>
+        <Login />
+      </ErrorBoundary>
+    );
   }
 
   return (
-    <HashRouter>
-      <MainLayout activationInfo={activationInfo} onRecheckActivation={checkActivation} />
-    </HashRouter>
+    <ErrorBoundary>
+      <HashRouter>
+        <MainLayout activationInfo={activationInfo} onRecheckActivation={checkActivation} />
+      </HashRouter>
+    </ErrorBoundary>
   );
 }
 
 export default App;
+

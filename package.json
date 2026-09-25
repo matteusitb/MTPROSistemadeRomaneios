@@ -1,7 +1,7 @@
 {
   "name": "app",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "module",
   "main": "public/entry.cjs",
   "scripts": {
@@ -82,7 +82,6 @@
     },
     "files": [
       "**/*",
-      "!public/electron.cjs",
       "!src/**/*",
       "!dist-electron/**/*",
       "!.git/**/*",
