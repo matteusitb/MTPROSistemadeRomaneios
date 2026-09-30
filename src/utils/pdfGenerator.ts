@@ -11,6 +11,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
   const content: Record<string, unknown>[] = [];
 
   const totalMlCalculado = pacotes.reduce((acc, p) => acc + (Number(p.total_ml) || 0), 0);
+  const totalM2Calculado = pacotes.reduce((acc, p) => acc + (Number(p.total_m2) || 0), 0);
   const totalM3Calculado = pacotes.reduce((acc, p) => acc + (Number(p.total_m3) || 0), 0);
 
   // Computar espécies distintas dos pacotes (com fallback para a espécie global para dados legados)
@@ -89,6 +90,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
         { text: 'Larguras (cm)', bold: true, fillColor: '#e0f2fe', color: '#0284c7', alignment: 'left' },
         { text: 'Qtd', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: 'M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
       ];
 
@@ -104,6 +106,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
           { text: largurasText, alignment: 'left', color: '#4b5563' },
           { text: grupo.quantidade.toString(), alignment: 'center', bold: true },
           { text: grupo.volume_ml.toFixed(2).replace('.', ','), alignment: 'center' },
+          { text: (grupo.volume_m2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
           { text: grupo.volume_m3.toFixed(3).replace('.', ','), alignment: 'center', color: '#047857' }
         ]);
       });
@@ -111,7 +114,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
       content.push({
         table: {
           headerRows: 1,
-          widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto'],
+          widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'],
           body: bodyAbertos
         },
         layout: 'lightHorizontalLines',
@@ -128,6 +131,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
         { text: romaneio.tipo_romaneio === 'pes' ? 'Comprimento (pés)' : 'Comprimento (m)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Qtd', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: 'M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
       ];
 
@@ -136,6 +140,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
       normais.forEach((item: any, idx: number) => {
         const cMetros = romaneio.tipo_romaneio === 'pes' ? item.comprimento * 0.3048 : item.comprimento;
         const m3 = (item.espessura / 100) * (item.largura / 100) * cMetros * item.quantidade;
+        const m2 = (item.largura / 100) * cMetros * item.quantidade;
         const ml = cMetros * item.quantidade;
 
         const row: any[] = [
@@ -145,6 +150,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
           { text: romaneio.tipo_romaneio === 'pes' ? item.comprimento.toString().replace('.', ',') : item.comprimento.toFixed(2).replace('.', ','), alignment: 'center' },
           { text: item.quantidade.toString(), alignment: 'center', bold: true },
           { text: ml.toFixed(2).replace('.', ','), alignment: 'center' },
+          { text: m2.toFixed(2).replace('.', ','), alignment: 'center' },
           { text: m3.toFixed(3).replace('.', ','), alignment: 'center', color: '#047857' }
         ];
 
@@ -154,7 +160,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
       content.push({
         table: {
           headerRows: 1,
-          widths: ['auto', '*', '*', '*', 'auto', '*', '*'],
+          widths: ['auto', '*', '*', '*', 'auto', '*', '*', '*'],
           body: bodyNormais
         },
         layout: 'lightHorizontalLines',
@@ -165,12 +171,13 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
     // Tabela de Totais do Pacote
     content.push({
       table: {
-        widths: ['*', 'auto', 'auto', 'auto'],
+        widths: ['*', 'auto', 'auto', 'auto', 'auto'],
         body: [
           [
             { text: `TOTAIS DO PACOTE ${pacote.numero_pacote}`, bold: true, alignment: 'right', fillColor: '#f9fafb' },
             { text: `${totalPecasPacote} pçs`, bold: true, alignment: 'center', fillColor: '#f9fafb' },
             { text: `${pacote.total_ml.toFixed(2).replace('.', ',')} ML`, bold: true, alignment: 'center', fillColor: '#f9fafb' },
+            { text: `${(pacote.total_m2 || 0).toFixed(2).replace('.', ',')} M²`, bold: true, alignment: 'center', fillColor: '#f9fafb' },
             { text: `${pacote.total_m3.toFixed(3).replace('.', ',')} M³`, bold: true, alignment: 'center', fillColor: '#ecfdf5', color: '#047857' }
           ]
         ]
@@ -184,12 +191,13 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
   content.push({
     margin: [0, 30, 0, 0],
     table: {
-      widths: ['*', 'auto', 'auto'],
+      widths: ['*', 'auto', 'auto', 'auto'],
       body: [
         [
-          { text: 'TOTAL GERAL DO ROMANEIO', bold: true, alignment: 'right', fontSize: 14 },
-          { text: `${totalMlCalculado.toFixed(2).replace('.', ',')} ML`, bold: true, alignment: 'center', fontSize: 14 },
-          { text: `${totalM3Calculado.toFixed(3).replace('.', ',')} M³`, bold: true, alignment: 'center', fontSize: 14, color: '#047857', fillColor: '#ecfdf5' }
+          { text: 'TOTAL GERAL DO ROMANEIO', bold: true, alignment: 'right', fontSize: 13 },
+          { text: `${totalMlCalculado.toFixed(2).replace('.', ',')} ML`, bold: true, alignment: 'center', fontSize: 13 },
+          { text: `${totalM2Calculado.toFixed(2).replace('.', ',')} M²`, bold: true, alignment: 'center', fontSize: 13 },
+          { text: `${totalM3Calculado.toFixed(3).replace('.', ',')} M³`, bold: true, alignment: 'center', fontSize: 13, color: '#047857', fillColor: '#ecfdf5' }
         ]
       ]
     },
@@ -213,6 +221,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
     [
       { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
     ]
@@ -222,6 +231,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
     bodyEspecie.push([
       { text: item.especie, bold: true, alignment: 'left' },
       { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
+      { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
       { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
       { text: `${item.percentual.toFixed(1)}%`, alignment: 'center' }
     ]);
@@ -233,6 +243,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
       { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Bitola (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
     ]
@@ -243,6 +254,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
       { text: item.especie, alignment: 'left' },
       { text: `${item.espessura.toString().replace('.', ',')} x ${item.largura.toString().replace('.', ',')}`, bold: true, alignment: 'center' },
       { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
+      { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
       { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
       { text: `${item.percentual.toFixed(1)}%`, alignment: 'center' }
     ]);
@@ -254,6 +266,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
       { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Largura (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
     ]
@@ -264,6 +277,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
       { text: item.especie, alignment: 'left' },
       { text: `${item.largura.toString().replace('.', ',')} cm`, bold: true, alignment: 'center' },
       { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
+      { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
       { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
       { text: `${item.percentual.toFixed(1)}%`, alignment: 'center' }
     ]);
@@ -280,7 +294,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
   content.push({
     table: {
       headerRows: 1,
-      widths: ['*', 'auto', 'auto', 'auto'],
+      widths: ['*', 'auto', 'auto', 'auto', 'auto'],
       body: bodyEspecie
     },
     layout: 'lightHorizontalLines',
@@ -364,7 +378,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
     content.push({
       table: {
         headerRows: 1,
-        widths: ['*', 'auto', 'auto', 'auto', 'auto'],
+        widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
         body: bodyBitola
       },
       layout: 'lightHorizontalLines',
@@ -382,7 +396,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
     content.push({
       table: {
         headerRows: 1,
-        widths: ['*', 'auto', 'auto', 'auto', 'auto'],
+        widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
         body: bodyLargura
       },
       layout: 'lightHorizontalLines',
@@ -430,6 +444,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
   const content: Record<string, unknown>[] = [];
 
   const totalMlCalculado = pacotes.reduce((acc, p) => acc + (Number(p.total_ml) || 0), 0);
+  const totalM2Calculado = pacotes.reduce((acc, p) => acc + (Number(p.total_m2) || 0), 0);
   const totalM3Calculado = pacotes.reduce((acc, p) => acc + (Number(p.total_m3) || 0), 0);
   const totalPecasGeral = pacotes.reduce((acc, p) => {
     return acc + (p.itens?.reduce((itAcc: number, it: any) => itAcc + (Number(it.quantidade) || 0), 0) || 0);
@@ -500,18 +515,20 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
   // Caixa de Indicadores / Totais Gerais
   content.push({
     table: {
-      widths: ['*', '*', '*', '*'],
+      widths: ['*', '*', '*', '*', '*'],
       body: [
         [
           { text: 'TOTAL DE PACOTES', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
           { text: 'TOTAL DE PEÇAS', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
           { text: 'METROS LINEARES (ML)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
+          { text: 'ÁREA TOTAL (M²)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
           { text: 'VOLUME TOTAL (M³)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#ecfdf5', color: '#047857' }
         ],
         [
           { text: `${pacotes.length} pct`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
           { text: `${totalPecasGeral} un`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
           { text: totalMlCalculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
+          { text: totalM2Calculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
           { text: totalM3Calculado.toFixed(3).replace('.', ','), fontSize: 13, bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' }
         ]
       ]
@@ -531,6 +548,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
       { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Peças', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
     ]
@@ -541,6 +559,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
       { text: item.especie, bold: true, alignment: 'left' },
       { text: item.totalPecas.toString(), alignment: 'center' },
       { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
+      { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
       { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
       { text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true }
     ]);
@@ -557,7 +576,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
   content.push({
     table: {
       headerRows: 1,
-      widths: ['*', 'auto', 'auto', 'auto', 'auto'],
+      widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
       body: bodyEspecie
     },
     layout: 'lightHorizontalLines',
@@ -638,6 +657,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
         { text: 'Bitola (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Peças', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
       ]
@@ -649,6 +669,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
         { text: `${item.espessura.toString().replace('.', ',')} x ${item.largura.toString().replace('.', ',')}`, bold: true, alignment: 'center' },
         { text: item.totalPecas.toString(), alignment: 'center' },
         { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
+        { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
         { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
         { text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true }
       ]);
@@ -665,7 +686,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
     content.push({
       table: {
         headerRows: 1,
-        widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+        widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
         body: bodyBitola
       },
       layout: 'lightHorizontalLines',
@@ -677,6 +698,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
         { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Largura (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+        { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
       ]
@@ -687,6 +709,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
         { text: item.especie, alignment: 'left' },
         { text: `${item.largura.toString().replace('.', ',')} cm`, bold: true, alignment: 'center' },
         { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
+        { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
         { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
         { text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true }
       ]);
@@ -703,7 +726,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
     content.push({
       table: {
         headerRows: 1,
-        widths: ['*', 'auto', 'auto', 'auto', 'auto'],
+        widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
         body: bodyLargura
       },
       layout: 'lightHorizontalLines',
@@ -753,6 +776,7 @@ export const gerarPdfResumoDetalhadoBitola = (romaneio: any, pacotes: any[]) => 
   const content: Record<string, unknown>[] = [];
 
   const totalMlCalculado = pacotes.reduce((acc, p) => acc + (Number(p.total_ml) || 0), 0);
+  const totalM2Calculado = pacotes.reduce((acc, p) => acc + (Number(p.total_m2) || 0), 0);
   const totalM3Calculado = pacotes.reduce((acc, p) => acc + (Number(p.total_m3) || 0), 0);
   const totalPecasGeral = pacotes.reduce((acc, p) => {
     return acc + (p.itens?.reduce((itAcc: number, it: any) => itAcc + (Number(it.quantidade) || 0), 0) || 0);
@@ -824,18 +848,20 @@ export const gerarPdfResumoDetalhadoBitola = (romaneio: any, pacotes: any[]) => 
   // Caixa de Indicadores / Totais Gerais
   content.push({
     table: {
-      widths: ['*', '*', '*', '*'],
+      widths: ['*', '*', '*', '*', '*'],
       body: [
         [
           { text: 'TOTAL DE PACOTES', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
           { text: 'TOTAL DE PEÇAS', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
           { text: 'METROS LINEARES (ML)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
+          { text: 'ÁREA TOTAL (M²)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
           { text: 'VOLUME TOTAL (M³)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#ecfdf5', color: '#047857' }
         ],
         [
           { text: `${pacotes.length} pct`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
           { text: `${totalPecasGeral} un`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
           { text: totalMlCalculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
+          { text: totalM2Calculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
           { text: totalM3Calculado.toFixed(3).replace('.', ','), fontSize: 13, bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' }
         ]
       ]
@@ -856,6 +882,7 @@ export const gerarPdfResumoDetalhadoBitola = (romaneio: any, pacotes: any[]) => 
       { text: `Dimensões (Esp × Larg × Comp)`, bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Peças', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
       { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
     ]
@@ -870,6 +897,7 @@ export const gerarPdfResumoDetalhadoBitola = (romaneio: any, pacotes: any[]) => 
       { text: dimText, alignment: 'center', bold: true, color: '#1e293b' },
       { text: item.totalPecas.toString(), alignment: 'center', bold: true },
       { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
+      { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
       { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
       { text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true }
     ]);
@@ -881,6 +909,7 @@ export const gerarPdfResumoDetalhadoBitola = (romaneio: any, pacotes: any[]) => 
     { text: `${resumos.porBitolaComprimento.length} combinações`, bold: true, alignment: 'center', fillColor: '#f1f5f9', color: '#64748b' },
     { text: totalPecasGeral.toString(), bold: true, alignment: 'center', fillColor: '#f1f5f9' },
     { text: totalMlCalculado.toFixed(2).replace('.', ','), bold: true, alignment: 'center', fillColor: '#f1f5f9' },
+    { text: totalM2Calculado.toFixed(2).replace('.', ','), bold: true, alignment: 'center', fillColor: '#f1f5f9' },
     { text: totalM3Calculado.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#d1fae5' },
     { text: '100,0%', bold: true, alignment: 'center', fillColor: '#f1f5f9' }
   ]);
@@ -896,7 +925,7 @@ export const gerarPdfResumoDetalhadoBitola = (romaneio: any, pacotes: any[]) => 
   content.push({
     table: {
       headerRows: 1,
-      widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+      widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
       body: bodyDetalhada
     },
     layout: 'lightHorizontalLines',

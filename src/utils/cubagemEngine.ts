@@ -12,8 +12,9 @@ export interface ItemCalculado {
   largura: number;
   comprimento: number;
   quantidade: number;
-  volume_m3: number;
   volume_ml: number;
+  volume_m2: number;
+  volume_m3: number;
 }
 
 export interface GrupoLarguraAberta {
@@ -23,12 +24,14 @@ export interface GrupoLarguraAberta {
   larguras: number[];
   quantidade: number;
   volume_ml: number;
+  volume_m2: number;
   volume_m3: number;
 }
 
 export interface ResumoEspecie {
   especie: string;
   totalMl: number;
+  totalM2: number;
   totalM3: number;
   totalPecas: number;
   percentual: number;
@@ -39,6 +42,7 @@ export interface ResumoBitola {
   espessura: number;
   largura: number;
   totalMl: number;
+  totalM2: number;
   totalM3: number;
   totalPecas: number;
   percentual: number;
@@ -50,6 +54,7 @@ export interface ResumoBitolaComprimento {
   largura: number;
   comprimento: number;
   totalMl: number;
+  totalM2: number;
   totalM3: number;
   totalPecas: number;
   percentual: number;
@@ -59,6 +64,7 @@ export interface ResumoLargura {
   especie: string;
   largura: number;
   totalMl: number;
+  totalM2: number;
   totalM3: number;
   totalPecas: number;
   percentual: number;
@@ -75,6 +81,7 @@ export interface ResumoConsolidadoGeral {
   total7M3: number;
   totalAcima8M3: number;
   totalVolumeGeral: number;
+  totalM2Geral: number;
   totalMlGeral: number;
   totalPecasGeral: number;
 }
@@ -120,6 +127,38 @@ export function calcularVolumeM3(
   if (l <= 0 || q <= 0) return 0;
 
   return (e / 100) * (l / 100) * cMetros * q;
+}
+
+/**
+ * Calcula a área em metros quadrados (M²) de uma linha ou conjunto de larguras abertas.
+ */
+export function calcularMetrosQuadrados(
+  largura: number | string,
+  comprimento: number | string,
+  quantidade: number | string,
+  tipoRomaneio?: string
+): number {
+  const c = Number(comprimento) || 0;
+  if (c <= 0) return 0;
+
+  const cMetros = converterComprimentoParaMetros(c, tipoRomaneio);
+  const largStr = String(largura ?? '').trim();
+
+  // Tratamento de bica corrida (largura aberta com valores separados por hífen ou espaço)
+  if (/[\s-]+/.test(largStr)) {
+    const larguras = largStr
+      .split(/\s*-\s*|\s+/)
+      .map(Number)
+      .filter(x => !isNaN(x) && x > 0);
+    const somaLarguras = larguras.reduce((acc, curr) => acc + curr, 0);
+    return (somaLarguras / 100) * cMetros;
+  }
+
+  const l = Number(largura) || 0;
+  const q = Number(quantidade) || 0;
+  if (l <= 0 || q <= 0) return 0;
+
+  return (l / 100) * cMetros * q;
 }
 
 /**
@@ -172,6 +211,7 @@ export function processarItensPacote(itens: any[], tipoRomaneio?: string): {
         larguras: [],
         quantidade: 0,
         volume_ml: 0,
+        volume_m2: 0,
         volume_m3: 0
       });
     }
@@ -184,6 +224,7 @@ export function processarItensPacote(itens: any[], tipoRomaneio?: string): {
         grupo.larguras.push(l);
         grupo.quantidade += 1;
         grupo.volume_ml += cMetros;
+        grupo.volume_m2 += (l / 100) * cMetros;
         grupo.volume_m3 += (esp / 100) * (l / 100) * cMetros;
       });
     } else {
@@ -192,6 +233,7 @@ export function processarItensPacote(itens: any[], tipoRomaneio?: string): {
         grupo.larguras.push(l);
         grupo.quantidade += (qtd > 0 ? qtd : 1);
         grupo.volume_ml += cMetros * (qtd > 0 ? qtd : 1);
+        grupo.volume_m2 += (l / 100) * cMetros * (qtd > 0 ? qtd : 1);
         grupo.volume_m3 += (esp / 100) * (l / 100) * cMetros * (qtd > 0 ? qtd : 1);
       }
     }
@@ -204,15 +246,17 @@ export function processarItensPacote(itens: any[], tipoRomaneio?: string): {
 }
 
 /**
- * Calcula os totais (Peças, ML e M³) de um único pacote.
+ * Calcula os totais (Peças, ML, M² e M³) de um único pacote.
  */
 export function calcularTotaisPacote(itens: any[], tipoRomaneio?: string): {
   totalPecas: number;
   totalMl: number;
+  totalM2: number;
   totalM3: number;
 } {
   let totalPecas = 0;
   let totalMl = 0;
+  let totalM2 = 0;
   let totalM3 = 0;
 
   (itens || []).forEach(item => {
@@ -229,6 +273,7 @@ export function calcularTotaisPacote(itens: any[], tipoRomaneio?: string): {
       larguras.forEach(l => {
         const cMetros = converterComprimentoParaMetros(comp, tipoRomaneio);
         totalM3 += (esp / 100) * (l / 100) * cMetros;
+        totalM2 += (l / 100) * cMetros;
         totalMl += cMetros;
       });
     } else {
@@ -236,22 +281,23 @@ export function calcularTotaisPacote(itens: any[], tipoRomaneio?: string): {
       if (l > 0 && qtd > 0) {
         totalPecas += qtd;
         totalM3 += calcularVolumeM3(esp, l, comp, qtd, tipoRomaneio);
+        totalM2 += calcularMetrosQuadrados(l, comp, qtd, tipoRomaneio);
         totalMl += calcularMetrosLineares(comp, qtd, tipoRomaneio);
       }
     }
   });
 
-  return { totalPecas, totalMl, totalM3 };
+  return { totalPecas, totalMl, totalM2, totalM3 };
 }
 
 /**
  * Gera os resumos consolidados completos por Espécie, Bitola e Faixas de Comprimento.
  */
 export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: string): ResumoConsolidadoGeral {
-  const resumoEspecieMap: { [key: string]: { especie: string; totalMl: number; totalM3: number; totalPecas: number } } = {};
-  const resumoBitolaMap: { [key: string]: { especie: string; espessura: number; largura: number; totalMl: number; totalM3: number; totalPecas: number } } = {};
-  const resumoBitolaComprimentoMap: { [key: string]: { especie: string; espessura: number; largura: number; comprimento: number; totalMl: number; totalM3: number; totalPecas: number } } = {};
-  const resumoLarguraMap: { [key: string]: { especie: string; largura: number; totalMl: number; totalM3: number; totalPecas: number } } = {};
+  const resumoEspecieMap: { [key: string]: { especie: string; totalMl: number; totalM2: number; totalM3: number; totalPecas: number } } = {};
+  const resumoBitolaMap: { [key: string]: { especie: string; espessura: number; largura: number; totalMl: number; totalM2: number; totalM3: number; totalPecas: number } } = {};
+  const resumoBitolaComprimentoMap: { [key: string]: { especie: string; espessura: number; largura: number; comprimento: number; totalMl: number; totalM2: number; totalM3: number; totalPecas: number } } = {};
+  const resumoLarguraMap: { [key: string]: { especie: string; largura: number; totalMl: number; totalM2: number; totalM3: number; totalPecas: number } } = {};
 
   let totalMadeiraLongaM3 = 0;
   let totalShortM3 = 0;
@@ -259,6 +305,7 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
   let total7M3 = 0;
   let totalAcima8M3 = 0;
   let totalVolumeGeral = 0;
+  let totalM2Geral = 0;
   let totalMlGeral = 0;
   let totalPecasGeral = 0;
 
@@ -280,9 +327,11 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
         const larguras = lStr.split(/\s*-\s*|\s+/).map(Number).filter(x => !isNaN(x) && x > 0);
         larguras.forEach(l => {
           const m3 = (e / 100) * (l / 100) * cMetros * 1;
+          const m2 = (l / 100) * cMetros * 1;
           const ml = cMetros * 1;
 
           totalVolumeGeral += m3;
+          totalM2Geral += m2;
           totalMlGeral += ml;
           totalPecasGeral += 1;
 
@@ -296,42 +345,48 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
           }
 
           if (!resumoEspecieMap[especie]) {
-            resumoEspecieMap[especie] = { especie, totalMl: 0, totalM3: 0, totalPecas: 0 };
+            resumoEspecieMap[especie] = { especie, totalMl: 0, totalM2: 0, totalM3: 0, totalPecas: 0 };
           }
           resumoEspecieMap[especie].totalMl += ml;
+          resumoEspecieMap[especie].totalM2 += m2;
           resumoEspecieMap[especie].totalM3 += m3;
           resumoEspecieMap[especie].totalPecas += 1;
 
           const bitolaKey = `${especie}_${e}_${l}`;
           if (!resumoBitolaMap[bitolaKey]) {
-            resumoBitolaMap[bitolaKey] = { especie, espessura: e, largura: l, totalMl: 0, totalM3: 0, totalPecas: 0 };
+            resumoBitolaMap[bitolaKey] = { especie, espessura: e, largura: l, totalMl: 0, totalM2: 0, totalM3: 0, totalPecas: 0 };
           }
           resumoBitolaMap[bitolaKey].totalMl += ml;
+          resumoBitolaMap[bitolaKey].totalM2 += m2;
           resumoBitolaMap[bitolaKey].totalM3 += m3;
           resumoBitolaMap[bitolaKey].totalPecas += 1;
 
           const bitolaCompKey = `${especie}_${e}_${l}_${c}`;
           if (!resumoBitolaComprimentoMap[bitolaCompKey]) {
-            resumoBitolaComprimentoMap[bitolaCompKey] = { especie, espessura: e, largura: l, comprimento: c, totalMl: 0, totalM3: 0, totalPecas: 0 };
+            resumoBitolaComprimentoMap[bitolaCompKey] = { especie, espessura: e, largura: l, comprimento: c, totalMl: 0, totalM2: 0, totalM3: 0, totalPecas: 0 };
           }
           resumoBitolaComprimentoMap[bitolaCompKey].totalMl += ml;
+          resumoBitolaComprimentoMap[bitolaCompKey].totalM2 += m2;
           resumoBitolaComprimentoMap[bitolaCompKey].totalM3 += m3;
           resumoBitolaComprimentoMap[bitolaCompKey].totalPecas += 1;
 
           const larguraKey = `${especie}_${l}`;
           if (!resumoLarguraMap[larguraKey]) {
-            resumoLarguraMap[larguraKey] = { especie, largura: l, totalMl: 0, totalM3: 0, totalPecas: 0 };
+            resumoLarguraMap[larguraKey] = { especie, largura: l, totalMl: 0, totalM2: 0, totalM3: 0, totalPecas: 0 };
           }
           resumoLarguraMap[larguraKey].totalMl += ml;
+          resumoLarguraMap[larguraKey].totalM2 += m2;
           resumoLarguraMap[larguraKey].totalM3 += m3;
           resumoLarguraMap[larguraKey].totalPecas += 1;
         });
       } else {
         const l = Number(lVal) || 0;
         const m3 = (e / 100) * (l / 100) * cMetros * q;
+        const m2 = (l / 100) * cMetros * q;
         const ml = cMetros * q;
 
         totalVolumeGeral += m3;
+        totalM2Geral += m2;
         totalMlGeral += ml;
         totalPecasGeral += q;
 
@@ -345,33 +400,37 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
         }
 
         if (!resumoEspecieMap[especie]) {
-          resumoEspecieMap[especie] = { especie, totalMl: 0, totalM3: 0, totalPecas: 0 };
+          resumoEspecieMap[especie] = { especie, totalMl: 0, totalM2: 0, totalM3: 0, totalPecas: 0 };
         }
         resumoEspecieMap[especie].totalMl += ml;
+        resumoEspecieMap[especie].totalM2 += m2;
         resumoEspecieMap[especie].totalM3 += m3;
         resumoEspecieMap[especie].totalPecas += q;
 
         const bitolaKey = `${especie}_${e}_${l}`;
         if (!resumoBitolaMap[bitolaKey]) {
-          resumoBitolaMap[bitolaKey] = { especie, espessura: e, largura: l, totalMl: 0, totalM3: 0, totalPecas: 0 };
+          resumoBitolaMap[bitolaKey] = { especie, espessura: e, largura: l, totalMl: 0, totalM2: 0, totalM3: 0, totalPecas: 0 };
         }
         resumoBitolaMap[bitolaKey].totalMl += ml;
+        resumoBitolaMap[bitolaKey].totalM2 += m2;
         resumoBitolaMap[bitolaKey].totalM3 += m3;
         resumoBitolaMap[bitolaKey].totalPecas += q;
 
         const bitolaCompKey = `${especie}_${e}_${l}_${c}`;
         if (!resumoBitolaComprimentoMap[bitolaCompKey]) {
-          resumoBitolaComprimentoMap[bitolaCompKey] = { especie, espessura: e, largura: l, comprimento: c, totalMl: 0, totalM3: 0, totalPecas: 0 };
+          resumoBitolaComprimentoMap[bitolaCompKey] = { especie, espessura: e, largura: l, comprimento: c, totalMl: 0, totalM2: 0, totalM3: 0, totalPecas: 0 };
         }
         resumoBitolaComprimentoMap[bitolaCompKey].totalMl += ml;
+        resumoBitolaComprimentoMap[bitolaCompKey].totalM2 += m2;
         resumoBitolaComprimentoMap[bitolaCompKey].totalM3 += m3;
         resumoBitolaComprimentoMap[bitolaCompKey].totalPecas += q;
 
         const larguraKey = `${especie}_${l}`;
         if (!resumoLarguraMap[larguraKey]) {
-          resumoLarguraMap[larguraKey] = { especie, largura: l, totalMl: 0, totalM3: 0, totalPecas: 0 };
+          resumoLarguraMap[larguraKey] = { especie, largura: l, totalMl: 0, totalM2: 0, totalM3: 0, totalPecas: 0 };
         }
         resumoLarguraMap[larguraKey].totalMl += ml;
+        resumoLarguraMap[larguraKey].totalM2 += m2;
         resumoLarguraMap[larguraKey].totalM3 += m3;
         resumoLarguraMap[larguraKey].totalPecas += q;
       }
@@ -429,6 +488,7 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
     total7M3,
     totalAcima8M3,
     totalVolumeGeral,
+    totalM2Geral,
     totalMlGeral,
     totalPecasGeral
   };

@@ -1,17 +1,21 @@
 export interface RomaneioItem {
+  id?: number;
   espessura: number;
   largura: number;
   comprimento: number;
   quantidade: number;
-  volume_m3: number;
   volume_ml: number;
+  volume_m2?: number;
+  volume_m3: number;
 }
 
 export interface RomaneioPacote {
+  id?: number;
   numero_pacote: number;
   especie: string;
-  total_m3: number;
   total_ml: number;
+  total_m2?: number;
+  total_m3: number;
   itens: RomaneioItem[];
 }
 
@@ -19,8 +23,9 @@ export interface RomaneioData {
   cliente: string;
   especie?: string;
   data: string;
-  total_m3: number;
   total_ml: number;
+  total_m2?: number;
+  total_m3: number;
   tipo_romaneio?: string;
   pacotes: RomaneioPacote[];
 }
@@ -47,8 +52,9 @@ export interface RomaneioListItem {
   data: string;
   cliente?: string;
   especie?: string;
-  total_m3: number;
   total_ml: number;
+  total_m2?: number;
+  total_m3: number;
   tipo_romaneio?: string;
 }
 

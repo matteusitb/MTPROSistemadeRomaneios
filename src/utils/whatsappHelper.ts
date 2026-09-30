@@ -55,6 +55,7 @@ export const gerarTextoWhatsApp = (
 
   // Calcular totais dos pacotes selecionados
   const totalM3 = pacotes.reduce((acc, p) => acc + (Number(p.total_m3) || 0), 0);
+  const totalM2 = pacotes.reduce((acc, p) => acc + (Number(p.total_m2) || 0), 0);
   const totalMl = pacotes.reduce((acc, p) => acc + (Number(p.total_ml) || 0), 0);
   const totalPecas = pacotes.reduce((acc, p) => {
     const pecasPacote = p.itens?.reduce((sub: number, it: any) => sub + (Number(it.quantidade) || 0), 0) || 0;
@@ -81,6 +82,7 @@ export const gerarTextoWhatsApp = (
     msg += `• *Total de Peças:* ${totalPecas} un\n`;
   }
   msg += `• *Metros Lineares:* ${totalMl.toFixed(2).replace('.', ',')} ML\n`;
+  msg += `• *Metragem Quadrada:* ${totalM2.toFixed(2).replace('.', ',')} M²\n`;
   msg += `• *Volume Total:* ${totalM3.toFixed(3).replace('.', ',')} M³\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
 

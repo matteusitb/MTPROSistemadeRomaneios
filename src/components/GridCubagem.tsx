@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useRomaneioStore, type RomaneioItem } from '../store/useRomaneioStore';
 import { Trash2, Plus, AlertCircle, Copy, ClipboardPaste, SlidersHorizontal } from 'lucide-react';
 import Swal from 'sweetalert2';
-import { calcularVolumeM3, calcularMetrosLineares, validarToleranciaMedida } from '../utils/cubagemEngine';
+import { calcularVolumeM3, calcularMetrosQuadrados, calcularMetrosLineares, validarToleranciaMedida } from '../utils/cubagemEngine';
 
 // Refs para foco automático na nova linha (por id de item)
 const newRowFocusRef: { [key: string]: HTMLInputElement | null } = {};
@@ -302,6 +302,7 @@ const LinhaGridRowComponent = ({
   onRemove
 }: LinhaGridRowProps) => {
   const m3 = calcularVolumeM3(item.espessura, item.largura, item.comprimento, item.quantidade, tipoRomaneio);
+  const m2 = calcularMetrosQuadrados(item.largura, item.comprimento, item.quantidade, tipoRomaneio);
   const ml = calcularMetrosLineares(item.comprimento, item.quantidade, tipoRomaneio);
   const tolerancia = validarToleranciaMedida(item.espessura, item.largura, item.comprimento, tipoRomaneio);
 
@@ -363,6 +364,9 @@ const LinhaGridRowComponent = ({
 
       <td className="px-4 py-2 text-center text-slate-500 dark:text-slate-400 font-semibold text-sm">
         {ml > 0 ? ml.toFixed(2) : '-'}
+      </td>
+      <td className="px-4 py-2 text-center text-slate-600 dark:text-slate-300 font-bold text-sm">
+        {m2 > 0 ? m2.toFixed(2) : '-'}
       </td>
       <td className="px-4 py-2 text-center font-black text-emerald-600 dark:text-emerald-450 text-sm">
         {m3 > 0 ? m3.toFixed(3) : '-'}
@@ -734,8 +738,9 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
   }, [handlePasteExcel]);
 
   const totaisCalculados = useMemo(() => {
-    if (!pacote) return { totalPacoteM3: 0, totalPacoteML: 0, totalPacotePecas: 0 };
+    if (!pacote) return { totalPacoteM3: 0, totalPacoteM2: 0, totalPacoteML: 0, totalPacotePecas: 0 };
     let totalPacoteM3 = 0;
+    let totalPacoteM2 = 0;
     let totalPacoteML = 0;
     let totalPacotePecas = 0;
 
@@ -744,12 +749,13 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
       const item = itens[i];
       if (item.espessura && item.largura && item.comprimento && item.quantidade) {
         totalPacoteM3 += calcularVolumeM3(item.espessura, item.largura, item.comprimento, item.quantidade, tipoRomaneio);
+        totalPacoteM2 += calcularMetrosQuadrados(item.largura, item.comprimento, item.quantidade, tipoRomaneio);
         totalPacoteML += calcularMetrosLineares(item.comprimento, item.quantidade, tipoRomaneio);
         totalPacotePecas += Number(item.quantidade) || 0;
       }
     }
 
-    return { totalPacoteM3, totalPacoteML, totalPacotePecas };
+    return { totalPacoteM3, totalPacoteM2, totalPacoteML, totalPacotePecas };
   }, [pacote?.itens, tipoRomaneio]);
 
   if (!pacote) return null;
@@ -807,6 +813,7 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
               </th>
               <th className="px-4 py-3.5 text-center w-24">Qtd</th>
               <th className="px-4 py-3.5 text-center">Total ML</th>
+              <th className="px-4 py-3.5 text-center">Total M²</th>
               <th className="px-4 py-3.5 text-center">Total M³</th>
               <th className="px-4 py-3.5 text-center w-20"></th>
             </tr>
@@ -846,6 +853,9 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
               </td>
               <td className="px-5 py-4 text-center font-black text-slate-800 dark:text-slate-200">
                 {totaisCalculados.totalPacoteML.toFixed(2)} ML
+              </td>
+              <td className="px-5 py-4 text-center font-black text-slate-800 dark:text-slate-200">
+                {totaisCalculados.totalPacoteM2.toFixed(2)} M²
               </td>
               <td className="px-5 py-4 text-center font-black text-emerald-600 dark:text-emerald-450">
                 {totaisCalculados.totalPacoteM3.toFixed(3)} M³

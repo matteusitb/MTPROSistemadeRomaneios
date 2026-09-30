@@ -188,11 +188,13 @@ export const ModalEtiquetaPacote: React.FC<ModalEtiquetaPacoteProps> = ({
                       </div>
                     </div>
                     <div className="text-right">
+                      <div className="text-[11px] font-black text-slate-700 dark:text-slate-300">
+                        {Number(p.total_ml).toFixed(2)} ML
+                        <span className="mx-1 text-slate-300">|</span>
+                        <span className="text-blue-600 dark:text-blue-400">{Number(p.total_m2 || 0).toFixed(2)} M²</span>
+                      </div>
                       <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">
                         {Number(p.total_m3).toFixed(3)} M³
-                      </span>
-                      <span className="block text-[10px] text-slate-400 font-semibold">
-                        {Number(p.total_ml).toFixed(2)} ML
                       </span>
                     </div>
                   </div>

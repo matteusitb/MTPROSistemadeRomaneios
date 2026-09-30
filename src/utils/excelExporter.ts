@@ -8,11 +8,13 @@ export interface DadosExportacaoExcel {
   data: string;
   tipo_romaneio?: string;
   total_m3: number;
+  total_m2?: number;
   total_ml: number;
   pacotes: {
     numero_pacote: number;
     especie?: string;
     total_m3: number;
+    total_m2?: number;
     total_ml: number;
     itens: {
       espessura: number;
@@ -20,6 +22,7 @@ export interface DadosExportacaoExcel {
       comprimento: number;
       quantidade: number;
       volume_m3: number;
+      volume_m2?: number;
       volume_ml: number;
     }[];
   }[];
@@ -43,10 +46,10 @@ export function exportarRomaneioParaCSV(romaneio: DadosExportacaoExcel): void {
   csv += 'MT PRO - SISTEMA DE ROMANEIO DE MADEIRA SERRADA\n';
   csv += `Romaneio Nº;${romaneio.id};Data;${dataFormatada}\n`;
   csv += `Cliente/Fornecedor;${romaneio.cliente};Tipo de Romaneio;${tipoNome}\n`;
-  csv += `Volume Total (M³);${Number(romaneio.total_m3).toFixed(3).replace('.', ',')};Metros Lineares (ML);${Number(romaneio.total_ml).toFixed(2).replace('.', ',')}\n\n`;
+  csv += `Metros Lineares (ML);${Number(romaneio.total_ml).toFixed(2).replace('.', ',')};Área Total (M²);${Number(romaneio.total_m2 || 0).toFixed(2).replace('.', ',')};Volume Total (M³);${Number(romaneio.total_m3).toFixed(3).replace('.', ',')}\n\n`;
 
-  // Cabeçalho da Tabela Detalhada
-  csv += 'Pacote;Espécie;Item;Espessura (cm);Largura (cm);Comprimento;Quantidade;Total ML;Total M³\n';
+  // Cabeçalho da Tabela Detalhada (Ordem: ML, M², M³)
+  csv += 'Pacote;Espécie;Item;Espessura (cm);Largura (cm);Comprimento;Quantidade;Total ML;Total M²;Total M³\n';
 
   romaneio.pacotes.forEach(p => {
     const especie = p.especie || 'Mista';
@@ -55,13 +58,14 @@ export function exportarRomaneioParaCSV(romaneio: DadosExportacaoExcel): void {
       const espStr = Number(it.espessura).toString().replace('.', ',');
       const largStr = Number(it.largura).toString().replace('.', ',');
       const mlStr = Number(it.volume_ml).toFixed(2).replace('.', ',');
+      const m2Str = Number(it.volume_m2 || 0).toFixed(2).replace('.', ',');
       const m3Str = Number(it.volume_m3).toFixed(3).replace('.', ',');
 
-      csv += `${p.numero_pacote};${especie};${idx + 1};${espStr};${largStr};${compStr};${it.quantidade};${mlStr};${m3Str}\n`;
+      csv += `${p.numero_pacote};${especie};${idx + 1};${espStr};${largStr};${compStr};${it.quantidade};${mlStr};${m2Str};${m3Str}\n`;
     });
 
-    // Subtotal do pacote
-    csv += `Subtotal Pacote ${p.numero_pacote};${especie};;;;;;${Number(p.total_ml).toFixed(2).replace('.', ',')};${Number(p.total_m3).toFixed(3).replace('.', ',')}\n\n`;
+    // Subtotal do pacote (Ordem: ML, M², M³)
+    csv += `Subtotal Pacote ${p.numero_pacote};${especie};;;;;;${Number(p.total_ml).toFixed(2).replace('.', ',')};${Number(p.total_m2 || 0).toFixed(2).replace('.', ',')};${Number(p.total_m3).toFixed(3).replace('.', ',')}\n\n`;
   });
 
   // Criar download via Blob

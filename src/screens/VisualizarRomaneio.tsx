@@ -28,6 +28,7 @@ const PacoteTabelas = ({ pacote, tipoRomaneio }: { pacote: any; tipoRomaneio?: s
                 <th className="px-5 py-4 text-left text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20">Larguras (cm)</th>
                 <th className="px-5 py-4 text-center border-l border-slate-200 dark:border-slate-800">Qtd</th>
                 <th className="px-5 py-4 text-center">Total ML</th>
+                <th className="px-5 py-4 text-center">Total M²</th>
                 <th className="px-5 py-4 text-center">Total M³</th>
               </tr>
             </thead>
@@ -41,6 +42,7 @@ const PacoteTabelas = ({ pacote, tipoRomaneio }: { pacote: any; tipoRomaneio?: s
                   </td>
                   <td className="px-5 py-3 text-center font-black text-slate-800 dark:text-slate-100 border-l border-slate-100 dark:border-slate-800">{grupo.quantidade}</td>
                   <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-450 font-semibold">{grupo.volume_ml.toFixed(2).replace('.', ',')}</td>
+                  <td className="px-5 py-3 text-center text-blue-600 dark:text-blue-400 font-bold bg-blue-50/20 dark:bg-blue-950/10">{(grupo.volume_m2 || 0).toFixed(2).replace('.', ',')}</td>
                   <td className="px-5 py-3 text-center font-black text-emerald-600 dark:text-emerald-450 bg-emerald-50/30 dark:bg-emerald-950/20">{grupo.volume_m3.toFixed(3).replace('.', ',')}</td>
                 </tr>
               ))}
@@ -60,6 +62,7 @@ const PacoteTabelas = ({ pacote, tipoRomaneio }: { pacote: any; tipoRomaneio?: s
                 <th className="px-5 py-4 text-center">{tipoRomaneio === 'pes' ? 'Comprimento (pés)' : 'Comprimento (m)'}</th>
                 <th className="px-5 py-4 text-center w-24">Qtd</th>
                 <th className="px-5 py-4 text-center">Total ML</th>
+                <th className="px-5 py-4 text-center">Total M²</th>
                 <th className="px-5 py-4 text-center">Total M³</th>
               </tr>
             </thead>
@@ -67,6 +70,7 @@ const PacoteTabelas = ({ pacote, tipoRomaneio }: { pacote: any; tipoRomaneio?: s
               {normais.map((item: any, idx: number) => {
                 const cMetros = tipoRomaneio === 'pes' ? item.comprimento * 0.3048 : item.comprimento;
                 const m3 = (item.espessura / 100) * (item.largura / 100) * cMetros * item.quantidade;
+                const m2 = (item.largura / 100) * cMetros * item.quantidade;
                 const ml = cMetros * item.quantidade;
                 return (
                   <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
@@ -78,6 +82,7 @@ const PacoteTabelas = ({ pacote, tipoRomaneio }: { pacote: any; tipoRomaneio?: s
                     </td>
                     <td className="px-5 py-3 text-center font-black text-slate-800 dark:text-slate-100">{item.quantidade}</td>
                     <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-450 font-semibold">{ml.toFixed(2).replace('.', ',')}</td>
+                    <td className="px-5 py-3 text-center text-blue-600 dark:text-blue-400 font-bold bg-blue-50/20 dark:bg-blue-950/10">{m2.toFixed(2).replace('.', ',')}</td>
                     <td className="px-5 py-3 text-center font-black text-emerald-600 dark:text-emerald-450 bg-emerald-50/30 dark:bg-emerald-950/20">{m3.toFixed(3).replace('.', ',')}</td>
                   </tr>
                 );
@@ -103,6 +108,9 @@ const PacoteTabelas = ({ pacote, tipoRomaneio }: { pacote: any; tipoRomaneio?: s
           </div>
           <div className="px-6 py-4 text-center text-slate-800 dark:text-slate-200 font-black text-sm w-full md:w-auto min-w-[120px]">
             {pacote.total_ml.toFixed(2).replace('.', ',')} ML
+          </div>
+          <div className="px-6 py-4 text-center text-blue-700 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 font-black text-sm w-full md:w-auto min-w-[120px]">
+            {(pacote.total_m2 || 0).toFixed(2).replace('.', ',')} M²
           </div>
           <div className="px-6 py-4 text-center text-emerald-700 dark:text-emerald-450 bg-emerald-50/50 dark:bg-emerald-950/20 font-black text-sm w-full md:w-auto min-w-[120px]">
             {pacote.total_m3.toFixed(3).replace('.', ',')} M³
@@ -265,11 +273,13 @@ export default function VisualizarRomaneio() {
         data: romaneio.data,
         tipo_romaneio: romaneio.tipo_romaneio,
         total_m3: romaneio.total_m3,
+        total_m2: romaneio.total_m2,
         total_ml: romaneio.total_ml,
         pacotes: pacotes.map(p => ({
           numero_pacote: p.numero_pacote,
           especie: p.especie,
           total_m3: p.total_m3,
+          total_m2: p.total_m2,
           total_ml: p.total_ml,
           itens: p.itens || []
         }))
@@ -460,6 +470,7 @@ export default function VisualizarRomaneio() {
                           <th className="px-5 py-4">Espécie</th>
                           <th className="px-5 py-4 text-center">Peças</th>
                           <th className="px-5 py-4 text-center">Total ML</th>
+                          <th className="px-5 py-4 text-center">Total M²</th>
                           <th className="px-5 py-4 text-center">Total M³</th>
                           <th className="px-5 py-4 text-center w-28">% Vol</th>
                         </tr>
@@ -470,6 +481,7 @@ export default function VisualizarRomaneio() {
                             <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">{item.especie}</td>
                             <td className="px-5 py-3.5 text-center font-semibold">{item.totalPecas}</td>
                             <td className="px-5 py-3.5 text-center font-semibold">{item.totalMl.toFixed(2).replace('.', ',')}</td>
+                            <td className="px-5 py-3.5 text-center font-bold text-blue-600 dark:text-blue-400">{(item.totalM2 || 0).toFixed(2).replace('.', ',')}</td>
                             <td className="px-5 py-3.5 text-center font-black text-emerald-600 dark:text-emerald-450">{item.totalM3.toFixed(3).replace('.', ',')}</td>
                             <td className="px-5 py-3.5 text-center">
                               <span className="font-bold text-slate-500 dark:text-slate-400">{item.percentual.toFixed(1)}%</span>
@@ -569,6 +581,7 @@ export default function VisualizarRomaneio() {
                         <th className="px-5 py-4 text-center">Dimensão (Esp × Larg × Comp)</th>
                         <th className="px-5 py-4 text-center">Peças</th>
                         <th className="px-5 py-4 text-center">Total ML</th>
+                        <th className="px-5 py-4 text-center">Total M²</th>
                         <th className="px-5 py-4 text-center">Total M³</th>
                         <th className="px-5 py-4 text-center w-20">% Vol</th>
                       </tr>
@@ -588,6 +601,7 @@ export default function VisualizarRomaneio() {
                           </td>
                           <td className="px-5 py-3.5 text-center font-semibold">{item.totalPecas}</td>
                           <td className="px-5 py-3.5 text-center font-semibold">{item.totalMl.toFixed(2).replace('.', ',')}</td>
+                          <td className="px-5 py-3.5 text-center font-bold text-blue-600 dark:text-blue-400">{(item.totalM2 || 0).toFixed(2).replace('.', ',')}</td>
                           <td className="px-5 py-3.5 text-center font-black text-emerald-600 dark:text-emerald-450">{item.totalM3.toFixed(3).replace('.', ',')}</td>
                           <td className="px-5 py-3.5 text-center font-bold text-slate-400">{item.percentual.toFixed(1)}%</td>
                         </tr>
@@ -601,6 +615,7 @@ export default function VisualizarRomaneio() {
                         </td>
                         <td className="px-5 py-3 text-center">{resumos.totalPecasGeral}</td>
                         <td className="px-5 py-3 text-center">{resumos.totalMlGeral.toFixed(2).replace('.', ',')}</td>
+                        <td className="px-5 py-3 text-center text-blue-600 dark:text-blue-400">{(resumos.totalM2Geral || 0).toFixed(2).replace('.', ',')}</td>
                         <td className="px-5 py-3 text-center text-emerald-600 dark:text-emerald-450">{resumos.totalVolumeGeral.toFixed(3).replace('.', ',')}</td>
                         <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-400">100%</td>
                       </tr>
@@ -703,6 +718,12 @@ export default function VisualizarRomaneio() {
             <div className="text-right">
               <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Total ML</span>
               <span className="text-2xl font-black text-slate-100">{romaneio.total_ml.toFixed(2)}</span>
+            </div>
+            <div className="text-right">
+              <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Total M²</span>
+              <span className="text-2xl font-black text-blue-400">
+                {(romaneio.total_m2 || 0).toFixed(2)}
+              </span>
             </div>
             <div className="text-right">
               <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Total M³</span>

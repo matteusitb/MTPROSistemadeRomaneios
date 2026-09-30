@@ -470,6 +470,60 @@ function applyMigrations(targetDb) {
   } catch (e) {
     // Coluna já existe, ignora
   }
+
+  try {
+    targetDb.run(`ALTER TABLE romaneios ADD COLUMN total_m2 REAL DEFAULT 0`);
+  } catch (e) {
+    // Coluna já existe, ignora
+  }
+
+  try {
+    targetDb.run(`ALTER TABLE romaneio_pacotes ADD COLUMN total_m2 REAL DEFAULT 0`);
+  } catch (e) {
+    // Coluna já existe, ignora
+  }
+
+  try {
+    targetDb.run(`ALTER TABLE romaneio_itens ADD COLUMN volume_m2 REAL DEFAULT 0`);
+  } catch (e) {
+    // Coluna já existe, ignora
+  }
+
+  // Recalculo retroativo para registros antigos que ficaram com M2 zerado
+  try {
+    targetDb.run(`
+      UPDATE romaneio_itens
+      SET volume_m2 = (largura / 100.0) * 
+        CASE 
+          WHEN (SELECT r.tipo_romaneio FROM romaneios r JOIN romaneio_pacotes p ON r.id = p.romaneio_id WHERE p.id = romaneio_itens.pacote_id) = 'pes' 
+          THEN comprimento * 0.3048 
+          ELSE comprimento 
+        END * quantidade
+      WHERE volume_m2 = 0 OR volume_m2 IS NULL;
+    `);
+
+    targetDb.run(`
+      UPDATE romaneio_pacotes
+      SET total_m2 = (
+        SELECT COALESCE(SUM(volume_m2), 0)
+        FROM romaneio_itens
+        WHERE pacote_id = romaneio_pacotes.id
+      )
+      WHERE total_m2 = 0 OR total_m2 IS NULL;
+    `);
+
+    targetDb.run(`
+      UPDATE romaneios
+      SET total_m2 = (
+        SELECT COALESCE(SUM(total_m2), 0)
+        FROM romaneio_pacotes
+        WHERE romaneio_id = romaneios.id
+      )
+      WHERE total_m2 = 0 OR total_m2 IS NULL;
+    `);
+  } catch (e) {
+    console.error('Erro ao recalcular M2 retroativo:', e.message);
+  }
 }
 
 function popularRomaneiosDemo(targetDb) {
@@ -643,14 +697,17 @@ async function initDB() {
         cliente_id INTEGER,
         especie_id INTEGER,
         total_m3 REAL,
+        total_m2 REAL DEFAULT 0,
         total_ml REAL,
-        status TEXT
+        status TEXT,
+        tipo_romaneio TEXT DEFAULT 'padrao'
       );
       CREATE TABLE IF NOT EXISTS romaneio_pacotes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         romaneio_id INTEGER,
         numero_pacote INTEGER,
         total_m3 REAL,
+        total_m2 REAL DEFAULT 0,
         total_ml REAL,
         especie_id INTEGER
       );
@@ -662,6 +719,7 @@ async function initDB() {
         comprimento REAL,
         quantidade INTEGER,
         volume_m3 REAL,
+        volume_m2 REAL DEFAULT 0,
         volume_ml REAL
       );
     `);
@@ -918,7 +976,7 @@ protectedHandle('get-romaneios', () => {
                 WHERE pack.romaneio_id = r.id AND pack.especie_id IS NOT NULL),
                e_old.nome
              ) as especie,
-             r.total_m3, r.total_ml, r.tipo_romaneio 
+             r.total_m3, r.total_m2, r.total_ml, r.tipo_romaneio 
       FROM romaneios r 
       LEFT JOIN clientes c ON r.cliente_id = c.id 
       LEFT JOIN especies e_old ON r.especie_id = e_old.id
@@ -944,7 +1002,7 @@ protectedHandle('get-romaneio-by-id', (event, id) => {
 
     // 1. Dados do romaneio
     const rStmt = db.prepare(`
-      SELECT r.id, r.data, COALESCE(c.nome, '') as cliente, r.total_m3, r.total_ml, r.tipo_romaneio, r.cliente_id, r.especie_id
+      SELECT r.id, r.data, COALESCE(c.nome, '') as cliente, r.total_m3, r.total_m2, r.total_ml, r.tipo_romaneio, r.cliente_id, r.especie_id
       FROM romaneios r
       LEFT JOIN clientes c ON r.cliente_id = c.id
       WHERE r.id = ?
@@ -1172,23 +1230,23 @@ protectedHandle('save-romaneio', (event, data) => {
     }
 
     db.run(
-      `INSERT INTO romaneios (data, cliente_id, especie_id, total_m3, total_ml, status, tipo_romaneio) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [data.data, cliente_id, firstEspecieId, data.total_m3, data.total_ml, 'Ativo', data.tipo_romaneio || 'padrao']
+      `INSERT INTO romaneios (data, cliente_id, especie_id, total_m3, total_m2, total_ml, status, tipo_romaneio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [data.data, cliente_id, firstEspecieId, data.total_m3, data.total_m2 || 0, data.total_ml, 'Ativo', data.tipo_romaneio || 'padrao']
     );
     const romaneio_id = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
 
     data.pacotes.forEach(p => {
       const especie_id = getOrInsertEspecie(p.especie);
       db.run(
-        `INSERT INTO romaneio_pacotes (romaneio_id, numero_pacote, total_m3, total_ml, especie_id) VALUES (?, ?, ?, ?, ?)`,
-        [romaneio_id, p.numero_pacote, p.total_m3, p.total_ml, especie_id]
+        `INSERT INTO romaneio_pacotes (romaneio_id, numero_pacote, total_m3, total_m2, total_ml, especie_id) VALUES (?, ?, ?, ?, ?, ?)`,
+        [romaneio_id, p.numero_pacote, p.total_m3, p.total_m2 || 0, p.total_ml, especie_id]
       );
       const pacote_id = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
 
       p.itens.forEach(item => {
         db.run(
-          `INSERT INTO romaneio_itens (pacote_id, espessura, largura, comprimento, quantidade, volume_m3, volume_ml) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [pacote_id, item.espessura, item.largura, item.comprimento, item.quantidade, item.volume_m3, item.volume_ml]
+          `INSERT INTO romaneio_itens (pacote_id, espessura, largura, comprimento, quantidade, volume_m3, volume_m2, volume_ml) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [pacote_id, item.espessura, item.largura, item.comprimento, item.quantidade, item.volume_m3, item.volume_m2 || 0, item.volume_ml]
         );
       });
     });
@@ -1212,8 +1270,8 @@ protectedHandle('update-romaneio', (event, data) => {
     }
 
     db.run(
-      `UPDATE romaneios SET data = ?, cliente_id = ?, especie_id = ?, total_m3 = ?, total_ml = ?, tipo_romaneio = ? WHERE id = ?`,
-      [data.data, cliente_id, firstEspecieId, data.total_m3, data.total_ml, data.tipo_romaneio || 'padrao', id]
+      `UPDATE romaneios SET data = ?, cliente_id = ?, especie_id = ?, total_m3 = ?, total_m2 = ?, total_ml = ?, tipo_romaneio = ? WHERE id = ?`,
+      [data.data, cliente_id, firstEspecieId, data.total_m3, data.total_m2 || 0, data.total_ml, data.tipo_romaneio || 'padrao', id]
     );
 
     const oldPackages = db.exec(`SELECT id FROM romaneio_pacotes WHERE romaneio_id = ${id}`);
@@ -1228,15 +1286,15 @@ protectedHandle('update-romaneio', (event, data) => {
     data.pacotes.forEach(p => {
       const especie_id = getOrInsertEspecie(p.especie);
       db.run(
-        `INSERT INTO romaneio_pacotes (romaneio_id, numero_pacote, total_m3, total_ml, especie_id) VALUES (?, ?, ?, ?, ?)`,
-        [id, p.numero_pacote, p.total_m3, p.total_ml, especie_id]
+        `INSERT INTO romaneio_pacotes (romaneio_id, numero_pacote, total_m3, total_m2, total_ml, especie_id) VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, p.numero_pacote, p.total_m3, p.total_m2 || 0, p.total_ml, especie_id]
       );
       const pacote_id = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
 
       p.itens.forEach(item => {
         db.run(
-          `INSERT INTO romaneio_itens (pacote_id, espessura, largura, comprimento, quantidade, volume_m3, volume_ml) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [pacote_id, item.espessura, item.largura, item.comprimento, item.quantidade, item.volume_m3, item.volume_ml]
+          `INSERT INTO romaneio_itens (pacote_id, espessura, largura, comprimento, quantidade, volume_m3, volume_m2, volume_ml) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [pacote_id, item.espessura, item.largura, item.comprimento, item.quantidade, item.volume_m3, item.volume_m2 || 0, item.volume_ml]
         );
       });
     });

@@ -9,6 +9,7 @@ export interface PacoteEtiqueta {
   numero_pacote: number;
   especie?: string;
   total_m3: number;
+  total_m2?: number;
   total_ml: number;
   total_pecas?: number;
   itens?: {
@@ -48,8 +49,8 @@ export function gerarPdfEtiquetasPacote(
     const numRomaneio = String(romaneio.id).padStart(4, '0');
     const numPacote = String(pacote.numero_pacote).padStart(2, '0');
 
-    // Dados para o QR Code (resumo compacto)
-    const qrText = `ROMANEIO:#${numRomaneio}|PACOTE:${numPacote}|CLIENTE:${romaneio.cliente}|ESP:${especie}|PECAS:${totalPecas}|M3:${Number(pacote.total_m3).toFixed(3)}|ML:${Number(pacote.total_ml).toFixed(2)}`;
+    // Dados para o QR Code (resumo compacto na ordem ML, M², M³)
+    const qrText = `ROMANEIO:#${numRomaneio}|PACOTE:${numPacote}|CLIENTE:${romaneio.cliente}|ESP:${especie}|PECAS:${totalPecas}|ML:${Number(pacote.total_ml).toFixed(2)}|M2:${Number(pacote.total_m2 || 0).toFixed(2)}|M3:${Number(pacote.total_m3).toFixed(3)}`;
 
     // Cartão da Etiqueta
     content.push({
@@ -105,20 +106,22 @@ export function gerarPdfEtiquetasPacote(
                   margin: [0, 0, 0, 8]
                 },
 
-                // Caixa de Métricas do Pacote
+                // Caixa de Métricas do Pacote (Ordem: ML, M², M³)
                 {
                   table: {
-                    widths: ['*', '*', '*'],
+                    widths: ['*', '*', '*', '*'],
                     body: [
                       [
-                        { text: 'PEÇAS', fontSize: 8, bold: true, alignment: 'center', fillColor: '#f1f5f9' },
-                        { text: 'METROS (ML)', fontSize: 8, bold: true, alignment: 'center', fillColor: '#f1f5f9' },
-                        { text: 'VOLUME (M³)', fontSize: 8, bold: true, alignment: 'center', fillColor: '#dcfce7', color: '#15803d' }
+                        { text: 'PEÇAS', fontSize: 7, bold: true, alignment: 'center', fillColor: '#f1f5f9' },
+                        { text: 'METROS (ML)', fontSize: 7, bold: true, alignment: 'center', fillColor: '#f1f5f9' },
+                        { text: 'ÁREA (M²)', fontSize: 7, bold: true, alignment: 'center', fillColor: '#f1f5f9' },
+                        { text: 'VOLUME (M³)', fontSize: 7, bold: true, alignment: 'center', fillColor: '#dcfce7', color: '#15803d' }
                       ],
                       [
-                        { text: `${totalPecas} un`, fontSize: 12, bold: true, alignment: 'center' },
-                        { text: `${Number(pacote.total_ml).toFixed(2)}`, fontSize: 12, bold: true, alignment: 'center' },
-                        { text: `${Number(pacote.total_m3).toFixed(3)}`, fontSize: 13, bold: true, alignment: 'center', color: '#15803d' }
+                        { text: `${totalPecas} un`, fontSize: 11, bold: true, alignment: 'center' },
+                        { text: `${Number(pacote.total_ml).toFixed(2)}`, fontSize: 11, bold: true, alignment: 'center' },
+                        { text: `${Number(pacote.total_m2 || 0).toFixed(2)}`, fontSize: 11, bold: true, alignment: 'center' },
+                        { text: `${Number(pacote.total_m3).toFixed(3)}`, fontSize: 11, bold: true, alignment: 'center', color: '#15803d' }
                       ]
                     ]
                   },

@@ -11,6 +11,7 @@ import Swal from 'sweetalert2';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   calcularVolumeM3,
+  calcularMetrosQuadrados,
   calcularMetrosLineares,
   calcularResumosConsolidados
 } from '../utils/cubagemEngine';
@@ -233,6 +234,7 @@ export default function NovoRomaneio() {
 
   const totaisGerais = useMemo(() => {
     let totalM3 = 0;
+    let totalM2 = 0;
     let totalML = 0;
     let totalPecas = 0;
 
@@ -243,16 +245,18 @@ export default function NovoRomaneio() {
         const it = itens[i];
         if (it.espessura && it.largura && it.comprimento && it.quantidade) {
           totalM3 += calcularVolumeM3(it.espessura, it.largura, it.comprimento, it.quantidade, tipoRomaneio);
+          totalM2 += calcularMetrosQuadrados(it.largura, it.comprimento, it.quantidade, tipoRomaneio);
           totalML += calcularMetrosLineares(it.comprimento, it.quantidade, tipoRomaneio);
           totalPecas += Number(it.quantidade) || 0;
         }
       }
     }
 
-    return { totalGeralM3: totalM3, totalGeralML: totalML, totalGeralPecas: totalPecas };
+    return { totalGeralM3: totalM3, totalGeralM2: totalM2, totalGeralML: totalML, totalGeralPecas: totalPecas };
   }, [pacotes, tipoRomaneio]);
 
   const totalGeralM3 = totaisGerais.totalGeralM3;
+  const totalGeralM2 = totaisGerais.totalGeralM2;
   const totalGeralML = totaisGerais.totalGeralML;
 
   const resumos = useMemo(() => {
@@ -334,6 +338,7 @@ export default function NovoRomaneio() {
     try {
       const pacotesFormatados = pacotes.map(p => {
         let pM3 = 0;
+        let pM2 = 0;
         let pML = 0;
         const itensFormatados: any[] = [];
 
@@ -358,8 +363,10 @@ export default function NovoRomaneio() {
             const larguras = lStr.split(/[\s-]+/).map(Number).filter(x => !isNaN(x) && x > 0);
             for (const l of larguras) {
               const subM3 = calcularVolumeM3(esp, l, comp, 1, tipoRomaneio);
+              const subM2 = calcularMetrosQuadrados(l, comp, 1, tipoRomaneio);
               const subML = calcularMetrosLineares(comp, 1, tipoRomaneio);
               pM3 += subM3;
+              pM2 += subM2;
               pML += subML;
               itensFormatados.push({
                 espessura: esp,
@@ -367,6 +374,7 @@ export default function NovoRomaneio() {
                 comprimento: comp,
                 quantidade: 1,
                 volume_m3: subM3,
+                volume_m2: subM2,
                 volume_ml: subML
               });
             }
@@ -374,8 +382,10 @@ export default function NovoRomaneio() {
             const larg = Number(i.largura);
             const qtd = Number(i.quantidade);
             const itemM3 = calcularVolumeM3(esp, larg, comp, qtd, tipoRomaneio);
+            const itemM2 = calcularMetrosQuadrados(larg, comp, qtd, tipoRomaneio);
             const itemML = calcularMetrosLineares(comp, qtd, tipoRomaneio);
             pM3 += itemM3;
+            pM2 += itemM2;
             pML += itemML;
             itensFormatados.push({
               espessura: esp,
@@ -383,6 +393,7 @@ export default function NovoRomaneio() {
               comprimento: comp,
               quantidade: qtd,
               volume_m3: itemM3,
+              volume_m2: itemM2,
               volume_ml: itemML
             });
           }
@@ -392,6 +403,7 @@ export default function NovoRomaneio() {
           numero_pacote: p.numero,
           especie: p.especie.trim(),
           total_m3: pM3,
+          total_m2: pM2,
           total_ml: pML,
           itens: itensFormatados
         };
@@ -402,6 +414,7 @@ export default function NovoRomaneio() {
         data,
         tipo_romaneio: tipoRomaneio,
         total_m3: totalGeralM3,
+        total_m2: totalGeralM2,
         total_ml: totalGeralML,
         pacotes: pacotesFormatados
       };
@@ -804,6 +817,7 @@ export default function NovoRomaneio() {
                             <th className="px-4 py-3.5 text-center">Dimensão (Esp × Larg × Comp)</th>
                             <th className="px-4 py-3.5 text-center">Peças</th>
                             <th className="px-4 py-3.5 text-center">Total ML</th>
+                            <th className="px-4 py-3.5 text-center">Total M²</th>
                             <th className="px-4 py-3.5 text-center">Total M³</th>
                             <th className="px-4 py-3.5 text-center w-20">% Vol</th>
                           </tr>
@@ -823,6 +837,9 @@ export default function NovoRomaneio() {
                               </td>
                               <td className="px-4 py-3 text-center">{item.totalPecas}</td>
                               <td className="px-4 py-3 text-center">{item.totalMl.toFixed(2).replace('.', ',')}</td>
+                              <td className="px-4 py-3 text-center font-bold text-slate-700 dark:text-slate-300">
+                                {item.totalM2.toFixed(2).replace('.', ',')}
+                              </td>
                               <td className="px-4 py-3 text-center font-black text-emerald-600 dark:text-emerald-450">
                                 {item.totalM3.toFixed(3).replace('.', ',')}
                               </td>
@@ -840,6 +857,7 @@ export default function NovoRomaneio() {
                             </td>
                             <td className="px-4 py-2.5 text-center">{resumos.totalPecasGeral}</td>
                             <td className="px-4 py-2.5 text-center">{resumos.totalMlGeral.toFixed(2).replace('.', ',')}</td>
+                            <td className="px-4 py-2.5 text-center">{resumos.totalM2Geral.toFixed(2).replace('.', ',')}</td>
                             <td className="px-4 py-2.5 text-center text-emerald-600 dark:text-emerald-450">{resumos.totalVolumeGeral.toFixed(3).replace('.', ',')}</td>
                             <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400">100%</td>
                           </tr>
@@ -864,6 +882,10 @@ export default function NovoRomaneio() {
             <div className="text-right">
               <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Total ML</span>
               <span className="text-2xl font-black text-slate-100">{totalGeralML.toFixed(2)}</span>
+            </div>
+            <div className="text-right">
+              <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Total M²</span>
+              <span className="text-2xl font-black text-slate-100">{totalGeralM2.toFixed(2)}</span>
             </div>
             <div className="text-right">
               <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Total M³</span>

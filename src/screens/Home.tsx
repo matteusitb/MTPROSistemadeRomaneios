@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, LayoutList, FileText, Calendar, Box, Activity, Pencil, Eye, Search,
-  Copy, Trash2, Filter, FileSpreadsheet, ChevronLeft, ChevronRight
+  Copy, Trash2, Filter, FileSpreadsheet, ChevronLeft, ChevronRight, Layers
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { gerarPdfRomaneio } from '../utils/pdfGenerator';
@@ -219,11 +219,13 @@ export default function Home() {
         data: romaneio.data,
         tipo_romaneio: romaneio.tipo_romaneio,
         total_m3: romaneio.total_m3,
+        total_m2: romaneio.total_m2,
         total_ml: romaneio.total_ml,
         pacotes: pacotes.map((p: any) => ({
           numero_pacote: p.numero_pacote,
           especie: p.especie,
           total_m3: p.total_m3,
+          total_m2: p.total_m2,
           total_ml: p.total_ml,
           itens: p.itens || []
         }))
@@ -394,7 +396,7 @@ export default function Home() {
       </motion.div>
 
       {/* Cards de Métricas */}
-      <motion.div variants={containerVariants} initial="hidden" animate="show" className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <motion.div variants={containerVariants} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
         <motion.div variants={itemVariants} className="glass-card p-6 flex flex-col">
           <div className="flex items-center gap-4 mb-4">
             <div className="bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 p-3.5 rounded-2xl">
@@ -410,9 +412,19 @@ export default function Home() {
             <div className="bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 p-3.5 rounded-2xl">
               <Box size={24} strokeWidth={2.5} />
             </div>
-            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Volume Global (M³)</p>
+            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Volume (M³)</p>
           </div>
           <h3 className="text-4xl font-black text-slate-800 dark:text-slate-100">{totalGeralM3.toFixed(3)}</h3>
+        </motion.div>
+
+        <motion.div variants={itemVariants} className="glass-card p-6 flex flex-col">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="bg-cyan-50 dark:bg-cyan-950/30 text-cyan-600 dark:text-cyan-400 p-3.5 rounded-2xl">
+              <Layers size={24} strokeWidth={2.5} />
+            </div>
+            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Área (M²)</p>
+          </div>
+          <h3 className="text-4xl font-black text-slate-800 dark:text-slate-100">{romaneios.reduce((acc, r) => acc + (r.total_m2 || 0), 0).toFixed(2)}</h3>
         </motion.div>
 
         <motion.div variants={itemVariants} className="glass-card p-6 flex flex-col">
@@ -420,7 +432,7 @@ export default function Home() {
             <div className="bg-purple-50 dark:bg-purple-950/30 text-purple-600 dark:text-purple-400 p-3.5 rounded-2xl">
               <Activity size={24} strokeWidth={2.5} />
             </div>
-            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Volume Filtrado (M³)</p>
+            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Filtro (M³)</p>
           </div>
           <h3 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-br from-purple-600 to-indigo-600">{totalFiltradoM3.toFixed(3)}</h3>
         </motion.div>
@@ -550,23 +562,32 @@ export default function Home() {
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-6 items-center justify-between lg:justify-end lg:flex-1 border-t lg:border-t-0 dark:border-slate-800 pt-4 lg:pt-0">
-                    <div className="flex gap-8 px-4 w-full sm:w-auto justify-around sm:justify-end">
+                    <div className="flex gap-6 px-4 w-full sm:w-auto justify-around sm:justify-end">
                       <div className="text-right">
                         <span className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.1em] mb-1">
-                          Total Metros
+                          Total ML
                         </span>
-                        <span className="font-bold text-slate-600 dark:text-slate-350 text-lg">
+                        <span className="font-bold text-slate-600 dark:text-slate-350 text-base">
                           {(romaneio.total_ml || 0).toFixed(2)}{' '}
-                          <span className="text-sm text-slate-400">ml</span>
+                          <span className="text-xs text-slate-400">ml</span>
                         </span>
                       </div>
                       <div className="text-right">
                         <span className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.1em] mb-1">
-                          Total Cubagem
+                          Total M²
                         </span>
-                        <span className="font-black text-emerald-600 dark:text-emerald-400 text-lg">
+                        <span className="font-bold text-blue-600 dark:text-blue-400 text-base">
+                          {(romaneio.total_m2 || 0).toFixed(2)}{' '}
+                          <span className="text-xs text-blue-500/70">m²</span>
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.1em] mb-1">
+                          Total M³
+                        </span>
+                        <span className="font-black text-emerald-600 dark:text-emerald-400 text-base">
                           {(romaneio.total_m3 || 0).toFixed(3)}{' '}
-                          <span className="text-sm text-emerald-600/60 dark:text-emerald-400/60">m³</span>
+                          <span className="text-xs text-emerald-600/60 dark:text-emerald-400/60">m³</span>
                         </span>
                       </div>
                     </div>
