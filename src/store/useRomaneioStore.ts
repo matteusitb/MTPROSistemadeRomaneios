@@ -496,11 +496,15 @@ export const useRomaneioStore = create<RomaneioState>((set, get) => ({
         itensAgrupados.sort((a, b) => {
           const espA = Number(a.espessura) || 0;
           const espB = Number(b.espessura) || 0;
-          if (espA !== espB) return espB - espA;
+          if (espA !== espB) return espA - espB;
+
+          const largA = Number(a.largura) || 0;
+          const largB = Number(b.largura) || 0;
+          if (largA !== largB) return largA - largB;
 
           const compA = Number(a.comprimento) || 0;
           const compB = Number(b.comprimento) || 0;
-          return compB - compA;
+          return compA - compB;
         });
 
         return {

@@ -124,6 +124,20 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
 
     // Tabela Normal
     if (normais.length > 0) {
+      normais.sort((a, b) => {
+        const espA = Number(a.espessura) || 0;
+        const espB = Number(b.espessura) || 0;
+        if (espA !== espB) return espA - espB;
+
+        const largA = Number(a.largura) || 0;
+        const largB = Number(b.largura) || 0;
+        if (largA !== largB) return largA - largB;
+
+        const compA = Number(a.comprimento) || 0;
+        const compB = Number(b.comprimento) || 0;
+        return compA - compB;
+      });
+
       const headers = [
         { text: 'Item', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Espessura (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
