@@ -551,10 +551,7 @@ export default function Home() {
                         <span className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-800">
                           <Calendar size={14} />
                           {romaneio.data
-                            ? (() => {
-                                const [year, month, day] = romaneio.data.split('-');
-                                return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('pt-BR');
-                              })()
+                            ? romaneio.data.split('T')[0].split('-').reverse().join('/')
                             : 'S/ Data'}
                         </span>
                       </div>

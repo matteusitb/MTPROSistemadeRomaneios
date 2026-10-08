@@ -56,7 +56,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
         [
           { text: romaneio.cliente, fontSize: 12, bold: true, border: [false, false, false, false] },
           { text: especiesDistintas, fontSize: 12, bold: true, border: [false, false, false, false] },
-          { text: new Date(romaneio.data).toLocaleDateString('pt-BR'), fontSize: 12, bold: true, border: [false, false, false, false] }
+          { text: romaneio.data ? romaneio.data.split('T')[0].split('-').reverse().join('/') : '', fontSize: 12, bold: true, border: [false, false, false, false] }
         ]
       ]
     },
@@ -514,7 +514,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
         [
           { text: romaneio.cliente, fontSize: 11, bold: true, border: [false, false, false, false] },
           { text: especiesDistintas, fontSize: 11, bold: true, border: [false, false, false, false] },
-          { text: new Date(romaneio.data).toLocaleDateString('pt-BR'), fontSize: 11, bold: true, border: [false, false, false, false] }
+          { text: romaneio.data ? romaneio.data.split('T')[0].split('-').reverse().join('/') : '', fontSize: 11, bold: true, border: [false, false, false, false] }
         ]
       ]
     },
@@ -847,7 +847,7 @@ export const gerarPdfResumoDetalhadoBitola = (romaneio: any, pacotes: any[]) => 
         [
           { text: romaneio.cliente, fontSize: 11, bold: true, border: [false, false, false, false] },
           { text: especiesDistintas, fontSize: 11, bold: true, border: [false, false, false, false] },
-          { text: new Date(romaneio.data).toLocaleDateString('pt-BR'), fontSize: 11, bold: true, border: [false, false, false, false] }
+          { text: romaneio.data ? romaneio.data.split('T')[0].split('-').reverse().join('/') : '', fontSize: 11, bold: true, border: [false, false, false, false] }
         ]
       ]
     },

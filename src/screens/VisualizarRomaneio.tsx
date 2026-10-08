@@ -395,7 +395,7 @@ export default function VisualizarRomaneio() {
                   Data de Emissão
                 </span>
                 <span className="text-base font-bold text-slate-800 dark:text-slate-100">
-                  {new Date(romaneio.data).toLocaleDateString('pt-BR')}
+                  {romaneio.data ? romaneio.data.split('T')[0].split('-').reverse().join('/') : ''}
                 </span>
               </div>
             </div>
