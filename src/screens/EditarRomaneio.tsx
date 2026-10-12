@@ -5,7 +5,7 @@ import GridCubagem from '../components/GridCubagem';
 import { ModalTipoRomaneio } from '../components/ModalTipoRomaneio';
 import {
   Plus, Save, Trash2, ArrowLeft, Loader2, BarChart3,
-  ChevronDown, ChevronUp, Copy, Sparkles, AlertTriangle
+  ChevronDown, ChevronUp, Copy, Sparkles, AlertTriangle, Ruler
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -13,8 +13,10 @@ import {
   calcularVolumeM3,
   calcularMetrosQuadrados,
   calcularMetrosLineares,
-  calcularResumosConsolidados
+  calcularResumosConsolidados,
+  formatarDimensao
 } from '../utils/cubagemEngine';
+import { useConfigStore } from '../store/useConfigStore';
 
 interface CardPacoteProps {
   pacoteId: string;
@@ -136,6 +138,9 @@ export default function EditarRomaneio() {
   const [clienteError, setClienteError] = useState(false);
   const [addPacoteError, setAddPacoteError] = useState('');
   const [modalTipoAberto, setModalTipoAberto] = useState(false);
+
+  const exibirMetragensExtras = useConfigStore(state => state.exibirMetragensExtras);
+  const toggleExibirMetragensExtras = useConfigStore(state => state.toggleExibirMetragensExtras);
 
   const cliente = useRomaneioStore(state => state.cliente);
   const data = useRomaneioStore(state => state.data);
@@ -507,6 +512,18 @@ export default function EditarRomaneio() {
               >
                 <Sparkles size={13} /> {getTipoLabel()} • Alterar
               </button>
+              <button
+                type="button"
+                onClick={toggleExibirMetragensExtras}
+                className={`text-xs font-black uppercase tracking-widest px-3 py-1 rounded-full border flex items-center gap-1.5 transition-all cursor-pointer ${
+                  exibirMetragensExtras 
+                    ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border-blue-200/50 dark:border-blue-800/40 hover:text-blue-700 dark:hover:text-blue-300' 
+                    : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+                title={exibirMetragensExtras ? 'Ocultar Metragens Extras (ML/M²)' : 'Exibir Metragens Extras (ML/M²)'}
+              >
+                <Ruler size={13} /> {exibirMetragensExtras ? 'Ocultar ML/M²' : 'Exibir ML/M²'}
+              </button>
             </div>
             <h1 className="text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight">
               Editar Romaneio #{id}
@@ -640,7 +657,12 @@ export default function EditarRomaneio() {
                             <tr>
                               <th className="px-5 py-3.5">Espécie</th>
                               <th className="px-5 py-3.5 text-center">Peças</th>
-                              <th className="px-5 py-3.5 text-center">Total ML</th>
+                              {exibirMetragensExtras && (
+                                <>
+                                  <th className="px-5 py-3.5 text-center">Total ML</th>
+                                  <th className="px-5 py-3.5 text-center">Total M²</th>
+                                </>
+                              )}
                               <th className="px-5 py-3.5 text-center">Total M³</th>
                               <th className="px-5 py-3.5 text-center w-20">% Vol</th>
                             </tr>
@@ -650,7 +672,12 @@ export default function EditarRomaneio() {
                               <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                                 <td className="px-5 py-3 font-bold text-slate-800 dark:text-slate-100">{item.especie}</td>
                                 <td className="px-5 py-3 text-center">{item.totalPecas}</td>
-                                <td className="px-5 py-3 text-center">{item.totalMl.toFixed(2)}</td>
+                                {exibirMetragensExtras && (
+                                  <>
+                                    <td className="px-5 py-3 text-center">{item.totalMl.toFixed(2)}</td>
+                                    <td className="px-5 py-3 text-center font-bold text-blue-600 dark:text-blue-400">{(item.totalM2 || 0).toFixed(2)}</td>
+                                  </>
+                                )}
                                 <td className="px-5 py-3 text-center font-black text-emerald-600 dark:text-emerald-450">
                                   {item.totalM3.toFixed(3)}
                                 </td>
@@ -792,19 +819,23 @@ export default function EditarRomaneio() {
                             <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                               <td className="px-4 py-3 text-slate-800 dark:text-slate-100 font-bold">{item.especie}</td>
                               <td className="px-4 py-3 text-center font-black text-slate-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-950/25">
-                                <span className="text-blue-600 dark:text-blue-400">{item.espessura.toString().replace('.', ',')}</span>
+                                <span className="text-blue-600 dark:text-blue-400">{formatarDimensao(item.espessura)}</span>
                                 <span className="text-[10px] text-slate-400 font-bold mx-1">×</span>
-                                <span className="text-indigo-600 dark:text-indigo-400">{item.largura.toString().replace('.', ',')}</span>
+                                <span className="text-indigo-600 dark:text-indigo-400">{formatarDimensao(item.largura)}</span>
                                 <span className="text-[10px] text-slate-400 font-bold mx-1">×</span>
                                 <span className="text-amber-600 dark:text-amber-400">
                                   {Number(item.comprimento).toFixed(2).replace('.', ',')}{tipoRomaneio === 'pes' ? '\'' : 'm'}
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-center">{item.totalPecas}</td>
-                              <td className="px-4 py-3 text-center">{item.totalMl.toFixed(2).replace('.', ',')}</td>
-                              <td className="px-4 py-3 text-center font-bold text-slate-700 dark:text-slate-300">
-                                {item.totalM2.toFixed(2).replace('.', ',')}
-                              </td>
+                              {exibirMetragensExtras && (
+                                <>
+                                  <td className="px-4 py-3 text-center">{item.totalMl.toFixed(2).replace('.', ',')}</td>
+                                  <td className="px-4 py-3 text-center font-bold text-slate-700 dark:text-slate-300">
+                                    {item.totalM2.toFixed(2).replace('.', ',')}
+                                  </td>
+                                </>
+                              )}
                               <td className="px-4 py-3 text-center font-black text-emerald-600 dark:text-emerald-450">
                                 {item.totalM3.toFixed(3).replace('.', ',')}
                               </td>
@@ -821,8 +852,12 @@ export default function EditarRomaneio() {
                               {resumos.porBitolaComprimento.length} combinações
                             </td>
                             <td className="px-4 py-2.5 text-center">{resumos.totalPecasGeral}</td>
-                            <td className="px-4 py-2.5 text-center">{resumos.totalMlGeral.toFixed(2).replace('.', ',')}</td>
-                            <td className="px-4 py-2.5 text-center">{resumos.totalM2Geral.toFixed(2).replace('.', ',')}</td>
+                            {exibirMetragensExtras && (
+                              <>
+                                <td className="px-4 py-2.5 text-center">{resumos.totalMlGeral.toFixed(2).replace('.', ',')}</td>
+                                <td className="px-4 py-2.5 text-center">{resumos.totalM2Geral.toFixed(2).replace('.', ',')}</td>
+                              </>
+                            )}
                             <td className="px-4 py-2.5 text-center text-emerald-600 dark:text-emerald-450">{resumos.totalVolumeGeral.toFixed(3).replace('.', ',')}</td>
                             <td className="px-4 py-2.5 text-center text-slate-500 dark:text-slate-400">100%</td>
                           </tr>
@@ -844,14 +879,18 @@ export default function EditarRomaneio() {
             Atalhos: <kbd className="bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-slate-300">Ctrl+S</kbd> Salvar Edição | <kbd className="bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-slate-300">Ctrl+Enter</kbd> Novo Pacote
           </div>
           <div className="flex gap-8 items-center ml-auto md:ml-0">
-            <div className="text-right">
-              <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Total ML</span>
-              <span className="text-2xl font-black text-slate-100">{totalGeralML.toFixed(2)}</span>
-            </div>
-            <div className="text-right">
-              <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Total M²</span>
-              <span className="text-2xl font-black text-slate-100">{totalGeralM2.toFixed(2)}</span>
-            </div>
+            {exibirMetragensExtras && (
+              <>
+                <div className="text-right">
+                  <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Total ML</span>
+                  <span className="text-2xl font-black text-slate-100">{totalGeralML.toFixed(2)}</span>
+                </div>
+                <div className="text-right">
+                  <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Total M²</span>
+                  <span className="text-2xl font-black text-slate-100">{totalGeralM2.toFixed(2)}</span>
+                </div>
+              </>
+            )}
             <div className="text-right">
               <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Total M³</span>
               <span className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">

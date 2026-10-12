@@ -6,6 +6,40 @@
 
 export const FATOR_PES_METROS = 0.3048;
 
+/**
+ * Formata dimensão (espessura ou largura em cm):
+ * Para valores redondos (inteiros) de 1 a 9, adiciona vírgula e zero (ex: 1 -> "1,0", 2 -> "2,0", ..., 9 -> "9,0").
+ * Para 10 em diante, valores redondos permanecem inteiros sem decimal (ex: 10 -> "10", 15 -> "15", 25 -> "25").
+ * Valores com casas decimais mantêm a fração com vírgula (ex: 2.5 -> "2,5").
+ */
+export function formatarDimensao(val: number | string | undefined | null): string {
+  if (val === undefined || val === null || val === '') return '';
+  const str = String(val).trim().replace(',', '.');
+  const num = Number(str);
+  if (isNaN(num)) return String(val).replace('.', ',');
+
+  if (Number.isInteger(num)) {
+    if (num > 0 && num <= 9) {
+      return `${num},0`;
+    }
+    return String(num);
+  }
+
+  return String(num).replace('.', ',');
+}
+
+/**
+ * Formata conjunto de bitola (espessura × largura):
+ * Ex: (5, 25) -> "5,0 × 25", (9, 9) -> "9,0 × 9,0", (10, 10) -> "10 × 10".
+ */
+export function formatarBitola(
+  espessura: number | string | undefined | null,
+  largura: number | string | undefined | null,
+  separador: string = ' × '
+): string {
+  return `${formatarDimensao(espessura)}${separador}${formatarDimensao(largura)}`;
+}
+
 export interface ItemCalculado {
   id?: string;
   espessura: number;
@@ -22,6 +56,7 @@ export interface GrupoLarguraAberta {
   espessura: number;
   comprimento: number;
   larguras: number[];
+  soma_larguras: number;
   quantidade: number;
   volume_ml: number;
   volume_m2: number;
@@ -209,6 +244,7 @@ export function processarItensPacote(itens: any[], tipoRomaneio?: string): {
         espessura: esp,
         comprimento: comp,
         larguras: [],
+        soma_larguras: 0,
         quantidade: 0,
         volume_ml: 0,
         volume_m2: 0,
@@ -222,6 +258,7 @@ export function processarItensPacote(itens: any[], tipoRomaneio?: string): {
       const largs = largStr.split(/\s*-\s*|\s+/).map(Number).filter(x => !isNaN(x) && x > 0);
       largs.forEach(l => {
         grupo.larguras.push(l);
+        grupo.soma_larguras += l;
         grupo.quantidade += 1;
         grupo.volume_ml += cMetros;
         grupo.volume_m2 += (l / 100) * cMetros;
@@ -231,6 +268,7 @@ export function processarItensPacote(itens: any[], tipoRomaneio?: string): {
       const l = Number(item.largura) || 0;
       if (l > 0) {
         grupo.larguras.push(l);
+        grupo.soma_larguras += l * (qtd > 0 ? qtd : 1);
         grupo.quantidade += (qtd > 0 ? qtd : 1);
         grupo.volume_ml += cMetros * (qtd > 0 ? qtd : 1);
         grupo.volume_m2 += (l / 100) * cMetros * (qtd > 0 ? qtd : 1);

@@ -1,8 +1,8 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, memo, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   PackageSearch, ArrowLeft, Loader2, Calendar, User, Box, Pencil, FileDown,
-  FileSpreadsheet, Tag
+  FileSpreadsheet, Tag, Ruler
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { gerarPdfRomaneio, gerarPdfResumoConsolidado, gerarPdfResumoDetalhadoBitola } from '../utils/pdfGenerator';
@@ -10,11 +10,35 @@ import { motion } from 'framer-motion';
 import { ModalWhatsApp, WhatsAppIcon } from '../components/ModalWhatsApp';
 import { ModalEtiquetaPacote } from '../components/ModalEtiquetaPacote';
 import { exportarRomaneioParaCSV } from '../utils/excelExporter';
-import { processarItensPacote, calcularResumosConsolidados } from '../utils/cubagemEngine';
+import { processarItensPacote, calcularResumosConsolidados, formatarDimensao } from '../utils/cubagemEngine';
+import { useConfigStore } from '../store/useConfigStore';
 
-const PacoteTabelas = ({ pacote, tipoRomaneio }: { pacote: any; tipoRomaneio?: string }) => {
-  const { normais, abertos } = processarItensPacote(pacote.itens, tipoRomaneio);
-  const totalPecas = pacote.itens?.reduce((acc: number, item: Record<string, unknown>) => acc + (Number(item.quantidade) || 0), 0) || 0;
+const PacoteTabelas = memo(({ pacote, tipoRomaneio, exibirMetragensExtras }: { pacote: any; tipoRomaneio?: string; exibirMetragensExtras: boolean }) => {
+  const { normais, abertos } = useMemo(() => processarItensPacote(pacote.itens, tipoRomaneio), [pacote.itens, tipoRomaneio]);
+  const totalPecas = useMemo(() => pacote.itens?.reduce((acc: number, item: Record<string, unknown>) => acc + (Number(item.quantidade) || 0), 0) || 0, [pacote.itens]);
+  const somaLargurasTotal = useMemo(() => {
+    return abertos.reduce((acc: number, g: any) => acc + (Number(g.soma_larguras) || g.larguras.reduce((a: number, b: number) => a + b, 0)), 0);
+  }, [abertos]);
+
+  const normaisCalculados = useMemo(() => {
+    return normais.map((item: any, idx: number) => {
+      const cMetros = tipoRomaneio === 'pes' ? item.comprimento * 0.3048 : item.comprimento;
+      const m3 = (item.espessura / 100) * (item.largura / 100) * cMetros * item.quantidade;
+      const m2 = (item.largura / 100) * cMetros * item.quantidade;
+      const ml = cMetros * item.quantidade;
+      return {
+        id: item.id || idx,
+        idx: idx + 1,
+        espessura: formatarDimensao(item.espessura),
+        largura: formatarDimensao(item.largura),
+        comprimento: tipoRomaneio === 'pes' ? item.comprimento.toString().replace('.', ',') : item.comprimento.toFixed(2).replace('.', ','),
+        quantidade: item.quantidade,
+        ml: ml.toFixed(2).replace('.', ','),
+        m2: m2.toFixed(2).replace('.', ','),
+        m3: m3.toFixed(3).replace('.', ',')
+      };
+    });
+  }, [normais, tipoRomaneio]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -26,23 +50,33 @@ const PacoteTabelas = ({ pacote, tipoRomaneio }: { pacote: any; tipoRomaneio?: s
                 <th className="px-5 py-4 text-center">Espessura (cm)</th>
                 <th className="px-5 py-4 text-center border-r border-slate-200 dark:border-slate-800">{tipoRomaneio === 'pes' ? 'Compr. (pés)' : 'Compr. (m)'}</th>
                 <th className="px-5 py-4 text-left text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20">Larguras (cm)</th>
-                <th className="px-5 py-4 text-center border-l border-slate-200 dark:border-slate-800">Qtd</th>
-                <th className="px-5 py-4 text-center">Total ML</th>
-                <th className="px-5 py-4 text-center">Total M²</th>
+                <th className="px-5 py-4 text-center border-l border-slate-200 dark:border-slate-800">Soma Larguras (cm)</th>
+                {exibirMetragensExtras && (
+                  <>
+                    <th className="px-5 py-4 text-center">Total ML</th>
+                    <th className="px-5 py-4 text-center">Total M²</th>
+                  </>
+                )}
                 <th className="px-5 py-4 text-center">Total M³</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
               {abertos.map((grupo: any) => (
                 <tr key={grupo.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
-                  <td className="px-5 py-3 text-center font-bold text-slate-800 dark:text-slate-200">{grupo.espessura.toString().replace('.', ',')}</td>
+                  <td className="px-5 py-3 text-center font-bold text-slate-800 dark:text-slate-200">{formatarDimensao(grupo.espessura)}</td>
                   <td className="px-5 py-3 text-center font-bold text-slate-800 dark:text-slate-200 border-r border-slate-100 dark:border-slate-800">{grupo.comprimento.toFixed(2).replace('.', ',')}</td>
                   <td className="px-5 py-3 text-left font-semibold text-slate-600 dark:text-slate-400 bg-blue-50/20 dark:bg-blue-950/10 leading-relaxed">
-                    {grupo.larguras.join(', ')} <span className="font-bold text-blue-750 dark:text-blue-400 ml-2">(Total: {grupo.larguras.reduce((a: number, b: number) => a + b, 0).toString().replace('.', ',')} cm)</span>
+                    {grupo.larguras.map(formatarDimensao).join(', ')}
                   </td>
-                  <td className="px-5 py-3 text-center font-black text-slate-800 dark:text-slate-100 border-l border-slate-100 dark:border-slate-800">{grupo.quantidade}</td>
-                  <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-450 font-semibold">{grupo.volume_ml.toFixed(2).replace('.', ',')}</td>
-                  <td className="px-5 py-3 text-center text-blue-600 dark:text-blue-400 font-bold bg-blue-50/20 dark:bg-blue-950/10">{(grupo.volume_m2 || 0).toFixed(2).replace('.', ',')}</td>
+                  <td className="px-5 py-3 text-center font-black text-slate-800 dark:text-slate-100 border-l border-slate-100 dark:border-slate-800">
+                    {grupo.soma_larguras ? grupo.soma_larguras.toString().replace('.', ',') : grupo.larguras.reduce((a: number, b: number) => a + b, 0).toString().replace('.', ',')}
+                  </td>
+                  {exibirMetragensExtras && (
+                    <>
+                      <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-450 font-semibold">{grupo.volume_ml.toFixed(2).replace('.', ',')}</td>
+                      <td className="px-5 py-3 text-center text-blue-600 dark:text-blue-400 font-bold bg-blue-50/20 dark:bg-blue-950/10">{(grupo.volume_m2 || 0).toFixed(2).replace('.', ',')}</td>
+                    </>
+                  )}
                   <td className="px-5 py-3 text-center font-black text-emerald-600 dark:text-emerald-450 bg-emerald-50/30 dark:bg-emerald-950/20">{grupo.volume_m3.toFixed(3).replace('.', ',')}</td>
                 </tr>
               ))}
@@ -51,7 +85,7 @@ const PacoteTabelas = ({ pacote, tipoRomaneio }: { pacote: any; tipoRomaneio?: s
         </div>
       )}
 
-      {normais.length > 0 && (
+      {normaisCalculados.length > 0 && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)]">
           <table className="w-full text-sm text-left">
             <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 uppercase text-[10px] font-black tracking-widest border-b border-slate-200 dark:border-slate-800">
@@ -61,32 +95,32 @@ const PacoteTabelas = ({ pacote, tipoRomaneio }: { pacote: any; tipoRomaneio?: s
                 <th className="px-5 py-4 text-center">Largura (cm)</th>
                 <th className="px-5 py-4 text-center">{tipoRomaneio === 'pes' ? 'Comprimento (pés)' : 'Comprimento (m)'}</th>
                 <th className="px-5 py-4 text-center w-24">Qtd</th>
-                <th className="px-5 py-4 text-center">Total ML</th>
-                <th className="px-5 py-4 text-center">Total M²</th>
+                {exibirMetragensExtras && (
+                  <>
+                    <th className="px-5 py-4 text-center">Total ML</th>
+                    <th className="px-5 py-4 text-center">Total M²</th>
+                  </>
+                )}
                 <th className="px-5 py-4 text-center">Total M³</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-              {normais.map((item: any, idx: number) => {
-                const cMetros = tipoRomaneio === 'pes' ? item.comprimento * 0.3048 : item.comprimento;
-                const m3 = (item.espessura / 100) * (item.largura / 100) * cMetros * item.quantidade;
-                const m2 = (item.largura / 100) * cMetros * item.quantidade;
-                const ml = cMetros * item.quantidade;
-                return (
-                  <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
-                    <td className="px-5 py-3 text-center text-slate-400 dark:text-slate-500 font-black text-[10px] tracking-wider">{idx + 1}</td>
-                    <td className="px-5 py-3 text-center font-bold text-slate-800 dark:text-slate-200">{item.espessura.toString().replace('.', ',')}</td>
-                    <td className="px-5 py-3 text-center font-bold text-slate-800 dark:text-slate-200">{item.largura.toString().replace('.', ',')}</td>
-                    <td className="px-5 py-3 text-center font-bold text-slate-800 dark:text-slate-200">
-                      {tipoRomaneio === 'pes' ? item.comprimento.toString().replace('.', ',') : item.comprimento.toFixed(2).replace('.', ',')}
-                    </td>
-                    <td className="px-5 py-3 text-center font-black text-slate-800 dark:text-slate-100">{item.quantidade}</td>
-                    <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-450 font-semibold">{ml.toFixed(2).replace('.', ',')}</td>
-                    <td className="px-5 py-3 text-center text-blue-600 dark:text-blue-400 font-bold bg-blue-50/20 dark:bg-blue-950/10">{m2.toFixed(2).replace('.', ',')}</td>
-                    <td className="px-5 py-3 text-center font-black text-emerald-600 dark:text-emerald-450 bg-emerald-50/30 dark:bg-emerald-950/20">{m3.toFixed(3).replace('.', ',')}</td>
-                  </tr>
-                );
-              })}
+              {normaisCalculados.map((item) => (
+                <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                  <td className="px-5 py-3 text-center text-slate-400 dark:text-slate-500 font-black text-[10px] tracking-wider">{item.idx}</td>
+                  <td className="px-5 py-3 text-center font-bold text-slate-800 dark:text-slate-200">{item.espessura}</td>
+                  <td className="px-5 py-3 text-center font-bold text-slate-800 dark:text-slate-200">{item.largura}</td>
+                  <td className="px-5 py-3 text-center font-bold text-slate-800 dark:text-slate-200">{item.comprimento}</td>
+                  <td className="px-5 py-3 text-center font-black text-slate-800 dark:text-slate-100">{item.quantidade}</td>
+                  {exibirMetragensExtras && (
+                    <>
+                      <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-450 font-semibold">{item.ml}</td>
+                      <td className="px-5 py-3 text-center text-blue-600 dark:text-blue-400 font-bold bg-blue-50/20 dark:bg-blue-950/10">{item.m2}</td>
+                    </>
+                  )}
+                  <td className="px-5 py-3 text-center font-black text-emerald-600 dark:text-emerald-450 bg-emerald-50/30 dark:bg-emerald-950/20">{item.m3}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -104,14 +138,20 @@ const PacoteTabelas = ({ pacote, tipoRomaneio }: { pacote: any; tipoRomaneio?: s
             Totais do Pacote {pacote.numero_pacote}:
           </div>
           <div className="px-6 py-4 text-center text-slate-800 dark:text-slate-200 font-black text-sm w-full md:w-auto min-w-[120px]">
-            {totalPecas} Peças
+            {tipoRomaneio === 'aberta' && abertos.length > 0
+              ? `${somaLargurasTotal % 1 === 0 ? somaLargurasTotal : somaLargurasTotal.toFixed(1).replace('.', ',')} cm`
+              : `${totalPecas} Peças`}
           </div>
-          <div className="px-6 py-4 text-center text-slate-800 dark:text-slate-200 font-black text-sm w-full md:w-auto min-w-[120px]">
-            {pacote.total_ml.toFixed(2).replace('.', ',')} ML
-          </div>
-          <div className="px-6 py-4 text-center text-blue-700 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 font-black text-sm w-full md:w-auto min-w-[120px]">
-            {(pacote.total_m2 || 0).toFixed(2).replace('.', ',')} M²
-          </div>
+          {exibirMetragensExtras && (
+            <>
+              <div className="px-6 py-4 text-center text-slate-800 dark:text-slate-200 font-black text-sm w-full md:w-auto min-w-[120px]">
+                {pacote.total_ml.toFixed(2).replace('.', ',')} ML
+              </div>
+              <div className="px-6 py-4 text-center text-blue-700 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 font-black text-sm w-full md:w-auto min-w-[120px]">
+                {(pacote.total_m2 || 0).toFixed(2).replace('.', ',')} M²
+              </div>
+            </>
+          )}
           <div className="px-6 py-4 text-center text-emerald-700 dark:text-emerald-450 bg-emerald-50/50 dark:bg-emerald-950/20 font-black text-sm w-full md:w-auto min-w-[120px]">
             {pacote.total_m3.toFixed(3).replace('.', ',')} M³
           </div>
@@ -119,7 +159,236 @@ const PacoteTabelas = ({ pacote, tipoRomaneio }: { pacote: any; tipoRomaneio?: s
       )}
     </div>
   );
-};
+});
+
+PacoteTabelas.displayName = 'PacoteTabelas';
+
+const ResumoConsolidadoView = memo(({
+  resumos,
+  tipoRomaneio,
+  exibirMetragensExtras,
+  gerarPDFResumo,
+  gerandoPdfResumo,
+  gerarPDFDetalhado,
+  gerandoPdfDetalhado
+}: {
+  resumos: any;
+  tipoRomaneio?: string;
+  exibirMetragensExtras: boolean;
+  gerarPDFResumo: () => void;
+  gerandoPdfResumo: boolean;
+  gerarPDFDetalhado: () => void;
+  gerandoPdfDetalhado: boolean;
+}) => {
+  return (
+    <div className="glass-panel p-8 relative overflow-hidden border-slate-200 dark:border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
+        <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-3">
+          <Box className="text-blue-600 dark:text-blue-400" size={20} strokeWidth={2.5} /> Resumo Consolidado do Romaneio
+        </h3>
+        <button
+          onClick={gerarPDFResumo}
+          disabled={gerandoPdfResumo}
+          className="px-4 py-2.5 rounded-xl font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 dark:hover:text-white border border-blue-200/60 dark:border-blue-800/40 transition-all flex items-center gap-2 text-xs shadow-sm cursor-pointer hover:shadow-md active:scale-95 disabled:opacity-50"
+          title="Exportar PDF exclusivo deste Resumo Consolidado"
+        >
+          <FileDown size={16} strokeWidth={2.5} />
+          {gerandoPdfResumo ? 'Gerando...' : 'Exportar PDF do Resumo'}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        <div className="space-y-6">
+          <div className="space-y-4">
+            <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+              Consolidado por Espécie
+            </h4>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)]">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 uppercase text-[9px] font-black tracking-widest border-b border-slate-200 dark:border-slate-800">
+                  <tr>
+                    <th className="px-5 py-4">Espécie</th>
+                    <th className="px-5 py-4 text-center">Peças</th>
+                    {exibirMetragensExtras && (
+                      <>
+                        <th className="px-5 py-4 text-center">Total ML</th>
+                        <th className="px-5 py-4 text-center">Total M²</th>
+                      </>
+                    )}
+                    <th className="px-5 py-4 text-center">Total M³</th>
+                    <th className="px-5 py-4 text-center w-28">% Vol</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                  {resumos.porEspecie.map((item: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">{item.especie}</td>
+                      <td className="px-5 py-3.5 text-center font-semibold">{item.totalPecas}</td>
+                      {exibirMetragensExtras && (
+                        <>
+                          <td className="px-5 py-3.5 text-center font-semibold">{item.totalMl.toFixed(2).replace('.', ',')}</td>
+                          <td className="px-5 py-3.5 text-center font-bold text-blue-600 dark:text-blue-400">{(item.totalM2 || 0).toFixed(2).replace('.', ',')}</td>
+                        </>
+                      )}
+                      <td className="px-5 py-3.5 text-center font-black text-emerald-600 dark:text-emerald-450">{item.totalM3.toFixed(3).replace('.', ',')}</td>
+                      <td className="px-5 py-3.5 text-center">
+                        <span className="font-bold text-slate-500 dark:text-slate-400">{item.percentual.toFixed(1)}%</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-850">
+            <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+              Consolidado por Categoria de Comprimento
+            </h4>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)]">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 uppercase text-[9px] font-black tracking-widest border-b border-slate-200 dark:border-slate-800">
+                  <tr>
+                    <th className="px-5 py-4">Categoria</th>
+                    <th className="px-5 py-4 text-center">Volume M³</th>
+                    <th className="px-5 py-4 text-center w-28">% Vol</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                  {tipoRomaneio === 'pes' ? (
+                    <>
+                      <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">6 PÉS E ABAIXO</td>
+                        <td className="px-5 py-3.5 text-center font-black text-red-600 dark:text-red-450 bg-red-50/20 dark:bg-red-950/10">{resumos.totalAbaixo6M3.toFixed(3).replace('.', ',')}</td>
+                        <td className="px-5 py-3.5 text-center font-bold text-slate-500 dark:text-slate-400">
+                          {(resumos.totalVolumeGeral > 0 ? (resumos.totalAbaixo6M3 / resumos.totalVolumeGeral) * 100 : 0).toFixed(1)}%
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">7 PÉS</td>
+                        <td className="px-5 py-3.5 text-center font-black text-amber-600 dark:text-amber-450 bg-amber-50/20 dark:bg-amber-950/10">{resumos.total7M3.toFixed(3).replace('.', ',')}</td>
+                        <td className="px-5 py-3.5 text-center font-bold text-slate-500 dark:text-slate-400">
+                          {(resumos.totalVolumeGeral > 0 ? (resumos.total7M3 / resumos.totalVolumeGeral) * 100 : 0).toFixed(1)}%
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">8 PÉS E ACIMA</td>
+                        <td className="px-5 py-3.5 text-center font-black text-emerald-600 dark:text-emerald-450 bg-emerald-50/20 dark:bg-emerald-950/10">{resumos.totalAcima8M3.toFixed(3).replace('.', ',')}</td>
+                        <td className="px-5 py-3.5 text-center font-bold text-slate-500 dark:text-slate-400">
+                          {(resumos.totalVolumeGeral > 0 ? (resumos.totalAcima8M3 / resumos.totalVolumeGeral) * 100 : 0).toFixed(1)}%
+                        </td>
+                      </tr>
+                    </>
+                  ) : (
+                    <>
+                      <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">MADEIRA LONGA (&gt;= 2,00 m)</td>
+                        <td className="px-5 py-3.5 text-center font-black text-emerald-600 dark:text-emerald-450 bg-emerald-50/20 dark:bg-emerald-950/10">{resumos.totalMadeiraLongaM3.toFixed(3).replace('.', ',')}</td>
+                        <td className="px-5 py-3.5 text-center font-bold text-slate-500 dark:text-slate-400">
+                          {(resumos.totalVolumeGeral > 0 ? (resumos.totalMadeiraLongaM3 / resumos.totalVolumeGeral) * 100 : 0).toFixed(1)}%
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">SHORT (&lt;= 1,90 m)</td>
+                        <td className="px-5 py-3.5 text-center font-black text-red-600 dark:text-red-450 bg-red-50/20 dark:bg-red-950/10">{resumos.totalShortM3.toFixed(3).replace('.', ',')}</td>
+                        <td className="px-5 py-3.5 text-center font-bold text-slate-500 dark:text-slate-400">
+                          {(resumos.totalVolumeGeral > 0 ? (resumos.totalShortM3 / resumos.totalVolumeGeral) * 100 : 0).toFixed(1)}%
+                        </td>
+                      </tr>
+                    </>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2">
+              <span>Consolidado por Bitola (Seção) e Comprimento</span>
+              <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[9px] px-1.5 py-0.5 rounded-full font-bold">
+                {resumos.porBitolaComprimento.length} {resumos.porBitolaComprimento.length === 1 ? 'dimensão' : 'dimensões'}
+              </span>
+            </h4>
+            <button
+              onClick={gerarPDFDetalhado}
+              disabled={gerandoPdfDetalhado}
+              className="px-3 py-1.5 rounded-xl font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white dark:hover:bg-emerald-600 dark:hover:text-white border border-emerald-200/60 dark:border-emerald-800/40 transition-all flex items-center gap-1.5 text-xs shadow-sm cursor-pointer hover:shadow-md active:scale-95 disabled:opacity-50"
+              title="Exportar PDF exclusivo deste Resumo Detalhado por Bitola e Comprimento"
+            >
+              <FileDown size={14} strokeWidth={2.5} />
+              {gerandoPdfDetalhado ? 'Gerando...' : 'Exportar Detalhado (PDF)'}
+            </button>
+          </div>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)]">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 uppercase text-[9px] font-black tracking-widest border-b border-slate-200 dark:border-slate-800">
+                <tr>
+                  <th className="px-5 py-4">Espécie</th>
+                  <th className="px-5 py-4 text-center">Dimensão (Esp × Larg × Comp)</th>
+                  <th className="px-5 py-4 text-center">Peças</th>
+                  {exibirMetragensExtras && (
+                    <>
+                      <th className="px-5 py-4 text-center">Total ML</th>
+                      <th className="px-5 py-4 text-center">Total M²</th>
+                    </>
+                  )}
+                  <th className="px-5 py-4 text-center">Total M³</th>
+                  <th className="px-5 py-4 text-center w-20">% Vol</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                {resumos.porBitolaComprimento.map((item: any, idx: number) => (
+                  <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                    <td className="px-5 py-3.5 text-slate-800 dark:text-slate-100 font-bold">{item.especie}</td>
+                    <td className="px-5 py-3.5 text-center font-black text-slate-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-950/20">
+                      <span className="text-blue-600 dark:text-blue-400">{formatarDimensao(item.espessura)}</span>
+                      <span className="text-[10px] text-slate-400 font-bold mx-1">×</span>
+                      <span className="text-indigo-600 dark:text-indigo-400">{formatarDimensao(item.largura)}</span>
+                      <span className="text-[10px] text-slate-400 font-bold mx-1">×</span>
+                      <span className="text-amber-600 dark:text-amber-400">
+                        {Number(item.comprimento).toFixed(2).replace('.', ',')}{tipoRomaneio === 'pes' ? '\'' : 'm'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-center font-semibold">{item.totalPecas}</td>
+                    {exibirMetragensExtras && (
+                      <>
+                        <td className="px-5 py-3.5 text-center font-semibold">{item.totalMl.toFixed(2).replace('.', ',')}</td>
+                        <td className="px-5 py-3.5 text-center font-bold text-blue-600 dark:text-blue-400">{(item.totalM2 || 0).toFixed(2).replace('.', ',')}</td>
+                      </>
+                    )}
+                    <td className="px-5 py-3.5 text-center font-black text-emerald-600 dark:text-emerald-450">{item.totalM3.toFixed(3).replace('.', ',')}</td>
+                    <td className="px-5 py-3.5 text-center font-bold text-slate-400">{item.percentual.toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-slate-50/70 dark:bg-slate-950/50 border-t border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 font-black">
+                <tr>
+                  <td className="px-5 py-3 uppercase text-[10px] tracking-wider text-slate-500 dark:text-slate-400">Total</td>
+                  <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-400 text-[10px]">
+                    {resumos.porBitolaComprimento.length} combinações
+                  </td>
+                  <td className="px-5 py-3 text-center">{resumos.totalPecasGeral}</td>
+                  {exibirMetragensExtras && (
+                    <>
+                      <td className="px-5 py-3 text-center">{resumos.totalMlGeral.toFixed(2).replace('.', ',')}</td>
+                      <td className="px-5 py-3 text-center text-blue-600 dark:text-blue-400">{(resumos.totalM2Geral || 0).toFixed(2).replace('.', ',')}</td>
+                    </>
+                  )}
+                  <td className="px-5 py-3 text-center text-emerald-600 dark:text-emerald-450">{resumos.totalVolumeGeral.toFixed(3).replace('.', ',')}</td>
+                  <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-400">100%</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+ResumoConsolidadoView.displayName = 'ResumoConsolidadoView';
 
 export default function VisualizarRomaneio() {
   const { id } = useParams<{ id: string }>();
@@ -128,11 +397,13 @@ export default function VisualizarRomaneio() {
   const [romaneio, setRomaneio] = useState<any | null>(null);
   const [pacotes, setPacotes] = useState<any[]>([]);
   const [abaAtiva, setAbaAtiva] = useState('resumo');
+  const exibirMetragensExtras = useConfigStore(state => state.exibirMetragensExtras);
+  const toggleExibirMetragensExtras = useConfigStore(state => state.toggleExibirMetragensExtras);
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [gerandoPdfResumo, setGerandoPdfResumo] = useState(false);
   const [gerandoPdfDetalhado, setGerandoPdfDetalhado] = useState(false);
 
-  const gerarPDFResumo = () => {
+  const gerarPDFResumo = useCallback(() => {
     if (!romaneio || pacotes.length === 0) return;
     setGerandoPdfResumo(true);
     Swal.fire({
@@ -153,9 +424,9 @@ export default function VisualizarRomaneio() {
         setGerandoPdfResumo(false);
       }
     }, 100);
-  };
+  }, [romaneio, pacotes]);
 
-  const gerarPDFDetalhado = () => {
+  const gerarPDFDetalhado = useCallback(() => {
     if (!romaneio || pacotes.length === 0) return;
     setGerandoPdfDetalhado(true);
     Swal.fire({
@@ -177,7 +448,7 @@ export default function VisualizarRomaneio() {
         setGerandoPdfDetalhado(false);
       }
     }, 100);
-  };
+  }, [romaneio, pacotes]);
   const [whatsappModalAberto, setWhatsappModalAberto] = useState(false);
   const [etiquetaModalAberto, setEtiquetaModalAberto] = useState(false);
 
@@ -353,12 +624,26 @@ export default function VisualizarRomaneio() {
               </div>
               Visualizando <span className="text-blue-600 dark:text-blue-400 ml-1">#{romaneio.id.toString().padStart(4, '0')}</span>
             </h2>
-            <Link
-              to="/"
-              className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 bg-slate-100/50 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-4 py-2.5 rounded-xl font-bold transition-all self-start sm:self-auto"
-            >
-              <ArrowLeft size={16} strokeWidth={2.5} /> Voltar
-            </Link>
+            <div className="flex items-center gap-3 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={toggleExibirMetragensExtras}
+                className={`flex items-center gap-2 text-sm px-4 py-2.5 rounded-xl font-bold transition-all cursor-pointer ${
+                  exibirMetragensExtras
+                    ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50'
+                    : 'bg-slate-100/50 text-slate-500 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+                title={exibirMetragensExtras ? 'Ocultar ML/M²' : 'Exibir ML/M²'}
+              >
+                <Ruler size={16} strokeWidth={2.5} /> {exibirMetragensExtras ? 'Ocultar ML/M²' : 'Exibir ML/M²'}
+              </button>
+              <Link
+                to="/"
+                className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 bg-slate-100/50 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-4 py-2.5 rounded-xl font-bold transition-all"
+              >
+                <ArrowLeft size={16} strokeWidth={2.5} /> Voltar
+              </Link>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -439,196 +724,21 @@ export default function VisualizarRomaneio() {
           </button>
         </div>
 
-        {/* Conteúdo da Aba Consolidado / Todos */}
-        {(abaAtiva === 'resumo' || abaAtiva === 'todos') && pacotes.length > 0 && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-8 relative overflow-hidden border-slate-200 dark:border-slate-800">
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
-              <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-3">
-                <Box className="text-blue-600 dark:text-blue-400" size={20} strokeWidth={2.5} /> Resumo Consolidado do Romaneio
-              </h3>
-              <button
-                onClick={gerarPDFResumo}
-                disabled={gerandoPdfResumo}
-                className="px-4 py-2.5 rounded-xl font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 dark:hover:text-white border border-blue-200/60 dark:border-blue-800/40 transition-all flex items-center gap-2 text-xs shadow-sm cursor-pointer hover:shadow-md active:scale-95 disabled:opacity-50"
-                title="Exportar PDF exclusivo deste Resumo Consolidado"
-              >
-                <FileDown size={16} strokeWidth={2.5} />
-                {gerandoPdfResumo ? 'Gerando...' : 'Exportar PDF do Resumo'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-              <div className="space-y-6">
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                    Consolidado por Espécie
-                  </h4>
-                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)]">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 uppercase text-[9px] font-black tracking-widest border-b border-slate-200 dark:border-slate-800">
-                        <tr>
-                          <th className="px-5 py-4">Espécie</th>
-                          <th className="px-5 py-4 text-center">Peças</th>
-                          <th className="px-5 py-4 text-center">Total ML</th>
-                          <th className="px-5 py-4 text-center">Total M²</th>
-                          <th className="px-5 py-4 text-center">Total M³</th>
-                          <th className="px-5 py-4 text-center w-28">% Vol</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                        {resumos.porEspecie.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                            <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">{item.especie}</td>
-                            <td className="px-5 py-3.5 text-center font-semibold">{item.totalPecas}</td>
-                            <td className="px-5 py-3.5 text-center font-semibold">{item.totalMl.toFixed(2).replace('.', ',')}</td>
-                            <td className="px-5 py-3.5 text-center font-bold text-blue-600 dark:text-blue-400">{(item.totalM2 || 0).toFixed(2).replace('.', ',')}</td>
-                            <td className="px-5 py-3.5 text-center font-black text-emerald-600 dark:text-emerald-450">{item.totalM3.toFixed(3).replace('.', ',')}</td>
-                            <td className="px-5 py-3.5 text-center">
-                              <span className="font-bold text-slate-500 dark:text-slate-400">{item.percentual.toFixed(1)}%</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-850">
-                  <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                    Consolidado por Categoria de Comprimento
-                  </h4>
-                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)]">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 uppercase text-[9px] font-black tracking-widest border-b border-slate-200 dark:border-slate-800">
-                        <tr>
-                          <th className="px-5 py-4">Categoria</th>
-                          <th className="px-5 py-4 text-center">Volume M³</th>
-                          <th className="px-5 py-4 text-center w-28">% Vol</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                        {romaneio?.tipo_romaneio === 'pes' ? (
-                          <>
-                            <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                              <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">6 PÉS E ABAIXO</td>
-                              <td className="px-5 py-3.5 text-center font-black text-red-600 dark:text-red-450 bg-red-50/20 dark:bg-red-950/10">{resumos.totalAbaixo6M3.toFixed(3).replace('.', ',')}</td>
-                              <td className="px-5 py-3.5 text-center font-bold text-slate-500 dark:text-slate-400">
-                                {(resumos.totalVolumeGeral > 0 ? (resumos.totalAbaixo6M3 / resumos.totalVolumeGeral) * 100 : 0).toFixed(1)}%
-                              </td>
-                            </tr>
-                            <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                              <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">7 PÉS</td>
-                              <td className="px-5 py-3.5 text-center font-black text-amber-600 dark:text-amber-450 bg-amber-50/20 dark:bg-amber-950/10">{resumos.total7M3.toFixed(3).replace('.', ',')}</td>
-                              <td className="px-5 py-3.5 text-center font-bold text-slate-500 dark:text-slate-400">
-                                {(resumos.totalVolumeGeral > 0 ? (resumos.total7M3 / resumos.totalVolumeGeral) * 100 : 0).toFixed(1)}%
-                              </td>
-                            </tr>
-                            <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                              <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">8 PÉS E ACIMA</td>
-                              <td className="px-5 py-3.5 text-center font-black text-emerald-600 dark:text-emerald-450 bg-emerald-50/20 dark:bg-emerald-950/10">{resumos.totalAcima8M3.toFixed(3).replace('.', ',')}</td>
-                              <td className="px-5 py-3.5 text-center font-bold text-slate-500 dark:text-slate-400">
-                                {(resumos.totalVolumeGeral > 0 ? (resumos.totalAcima8M3 / resumos.totalVolumeGeral) * 100 : 0).toFixed(1)}%
-                              </td>
-                            </tr>
-                          </>
-                        ) : (
-                          <>
-                            <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                              <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">MADEIRA LONGA (&gt;= 2,00 m)</td>
-                              <td className="px-5 py-3.5 text-center font-black text-emerald-600 dark:text-emerald-450 bg-emerald-50/20 dark:bg-emerald-950/10">{resumos.totalMadeiraLongaM3.toFixed(3).replace('.', ',')}</td>
-                              <td className="px-5 py-3.5 text-center font-bold text-slate-500 dark:text-slate-400">
-                                {(resumos.totalVolumeGeral > 0 ? (resumos.totalMadeiraLongaM3 / resumos.totalVolumeGeral) * 100 : 0).toFixed(1)}%
-                              </td>
-                            </tr>
-                            <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                              <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">SHORT (&lt;= 1,90 m)</td>
-                              <td className="px-5 py-3.5 text-center font-black text-red-600 dark:text-red-450 bg-red-50/20 dark:bg-red-950/10">{resumos.totalShortM3.toFixed(3).replace('.', ',')}</td>
-                              <td className="px-5 py-3.5 text-center font-bold text-slate-500 dark:text-slate-400">
-                                {(resumos.totalVolumeGeral > 0 ? (resumos.totalShortM3 / resumos.totalVolumeGeral) * 100 : 0).toFixed(1)}%
-                              </td>
-                            </tr>
-                          </>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <span>Consolidado por Bitola (Seção) e Comprimento</span>
-                    <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[9px] px-1.5 py-0.5 rounded-full font-bold">
-                      {resumos.porBitolaComprimento.length} {resumos.porBitolaComprimento.length === 1 ? 'dimensão' : 'dimensões'}
-                    </span>
-                  </h4>
-                  <button
-                    onClick={gerarPDFDetalhado}
-                    disabled={gerandoPdfDetalhado}
-                    className="px-3 py-1.5 rounded-xl font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white dark:hover:bg-emerald-600 dark:hover:text-white border border-emerald-200/60 dark:border-emerald-800/40 transition-all flex items-center gap-1.5 text-xs shadow-sm cursor-pointer hover:shadow-md active:scale-95 disabled:opacity-50"
-                    title="Exportar PDF exclusivo deste Resumo Detalhado por Bitola e Comprimento"
-                  >
-                    <FileDown size={14} strokeWidth={2.5} />
-                    {gerandoPdfDetalhado ? 'Gerando...' : 'Exportar Detalhado (PDF)'}
-                  </button>
-                </div>
-                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)]">
-                  <table className="w-full text-xs text-left">
-                    <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 uppercase text-[9px] font-black tracking-widest border-b border-slate-200 dark:border-slate-800">
-                      <tr>
-                        <th className="px-5 py-4">Espécie</th>
-                        <th className="px-5 py-4 text-center">Dimensão (Esp × Larg × Comp)</th>
-                        <th className="px-5 py-4 text-center">Peças</th>
-                        <th className="px-5 py-4 text-center">Total ML</th>
-                        <th className="px-5 py-4 text-center">Total M²</th>
-                        <th className="px-5 py-4 text-center">Total M³</th>
-                        <th className="px-5 py-4 text-center w-20">% Vol</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                      {resumos.porBitolaComprimento.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="px-5 py-3.5 text-slate-800 dark:text-slate-100 font-bold">{item.especie}</td>
-                          <td className="px-5 py-3.5 text-center font-black text-slate-700 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-950/20">
-                            <span className="text-blue-600 dark:text-blue-400">{item.espessura.toString().replace('.', ',')}</span>
-                            <span className="text-[10px] text-slate-400 font-bold mx-1">×</span>
-                            <span className="text-indigo-600 dark:text-indigo-400">{item.largura.toString().replace('.', ',')}</span>
-                            <span className="text-[10px] text-slate-400 font-bold mx-1">×</span>
-                            <span className="text-amber-600 dark:text-amber-400">
-                              {Number(item.comprimento).toFixed(2).replace('.', ',')}{romaneio?.tipo_romaneio === 'pes' ? '\'' : 'm'}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3.5 text-center font-semibold">{item.totalPecas}</td>
-                          <td className="px-5 py-3.5 text-center font-semibold">{item.totalMl.toFixed(2).replace('.', ',')}</td>
-                          <td className="px-5 py-3.5 text-center font-bold text-blue-600 dark:text-blue-400">{(item.totalM2 || 0).toFixed(2).replace('.', ',')}</td>
-                          <td className="px-5 py-3.5 text-center font-black text-emerald-600 dark:text-emerald-450">{item.totalM3.toFixed(3).replace('.', ',')}</td>
-                          <td className="px-5 py-3.5 text-center font-bold text-slate-400">{item.percentual.toFixed(1)}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-slate-50/70 dark:bg-slate-950/50 border-t border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 font-black">
-                      <tr>
-                        <td className="px-5 py-3 uppercase text-[10px] tracking-wider text-slate-500 dark:text-slate-400">Total</td>
-                        <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-400 text-[10px]">
-                          {resumos.porBitolaComprimento.length} combinações
-                        </td>
-                        <td className="px-5 py-3 text-center">{resumos.totalPecasGeral}</td>
-                        <td className="px-5 py-3 text-center">{resumos.totalMlGeral.toFixed(2).replace('.', ',')}</td>
-                        <td className="px-5 py-3 text-center text-blue-600 dark:text-blue-400">{(resumos.totalM2Geral || 0).toFixed(2).replace('.', ',')}</td>
-                        <td className="px-5 py-3 text-center text-emerald-600 dark:text-emerald-450">{resumos.totalVolumeGeral.toFixed(3).replace('.', ',')}</td>
-                        <td className="px-5 py-3 text-center text-slate-500 dark:text-slate-400">100%</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </motion.div>
+        {/* Conteúdo da Aba Consolidado */}
+        {abaAtiva === 'resumo' && pacotes.length > 0 && (
+          <ResumoConsolidadoView
+            resumos={resumos}
+            tipoRomaneio={romaneio?.tipo_romaneio}
+            exibirMetragensExtras={exibirMetragensExtras}
+            gerarPDFResumo={gerarPDFResumo}
+            gerandoPdfResumo={gerandoPdfResumo}
+            gerarPDFDetalhado={gerarPDFDetalhado}
+            gerandoPdfDetalhado={gerandoPdfDetalhado}
+          />
         )}
 
         {abaAtiva !== 'resumo' && abaAtiva !== 'todos' && pacoteAtivo && (
-          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="glass-panel p-8 border-slate-200 dark:border-slate-800">
+          <div className="glass-panel p-8 border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-4 mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
               <span className="bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 px-4 py-2 rounded-xl text-sm font-black tracking-wider uppercase border border-blue-200 dark:border-blue-900/30">
                 Pacote {pacoteAtivo.numero_pacote}
@@ -640,14 +750,14 @@ export default function VisualizarRomaneio() {
                 </strong>
               </span>
             </div>
-            <PacoteTabelas pacote={pacoteAtivo} tipoRomaneio={romaneio?.tipo_romaneio} />
-          </motion.div>
+            <PacoteTabelas pacote={pacoteAtivo} tipoRomaneio={romaneio?.tipo_romaneio} exibirMetragensExtras={exibirMetragensExtras} />
+          </div>
         )}
 
         {abaAtiva === 'todos' && (
           <div className="space-y-8">
             {pacotes.map(pacote => (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={pacote.id} className="glass-panel p-8 border-slate-200 dark:border-slate-800">
+              <div key={pacote.id} className="glass-panel p-8 border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-4 mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
                   <span className="bg-slate-100 dark:bg-slate-850 text-slate-700 dark:text-slate-350 px-4 py-2 rounded-xl text-sm font-black tracking-wider uppercase border border-slate-200 dark:border-slate-850">
                     Pacote {pacote.numero_pacote}
@@ -656,8 +766,8 @@ export default function VisualizarRomaneio() {
                     Espécie: <strong className="text-slate-800 dark:text-slate-200 ml-1">{pacote.especie || 'Sem espécie'}</strong>
                   </span>
                 </div>
-                <PacoteTabelas pacote={pacote} tipoRomaneio={romaneio?.tipo_romaneio} />
-              </motion.div>
+                <PacoteTabelas pacote={pacote} tipoRomaneio={romaneio?.tipo_romaneio} exibirMetragensExtras={exibirMetragensExtras} />
+              </div>
             ))}
           </div>
         )}
@@ -715,16 +825,20 @@ export default function VisualizarRomaneio() {
           </div>
 
           <div className="flex gap-8 items-center ml-auto">
-            <div className="text-right">
-              <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Total ML</span>
-              <span className="text-2xl font-black text-slate-100">{romaneio.total_ml.toFixed(2)}</span>
-            </div>
-            <div className="text-right">
-              <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Total M²</span>
-              <span className="text-2xl font-black text-blue-400">
-                {(romaneio.total_m2 || 0).toFixed(2)}
-              </span>
-            </div>
+            {exibirMetragensExtras && (
+              <>
+                <div className="text-right">
+                  <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Total ML</span>
+                  <span className="text-2xl font-black text-slate-100">{romaneio.total_ml.toFixed(2)}</span>
+                </div>
+                <div className="text-right">
+                  <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Total M²</span>
+                  <span className="text-2xl font-black text-blue-400">
+                    {(romaneio.total_m2 || 0).toFixed(2)}
+                  </span>
+                </div>
+              </>
+            )}
             <div className="text-right">
               <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Total M³</span>
               <span className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">
@@ -736,7 +850,7 @@ export default function VisualizarRomaneio() {
       </div>
 
       {/* Modal de Compartilhamento via WhatsApp */}
-      {romaneio && (
+      {whatsappModalAberto && romaneio && (
         <ModalWhatsApp
           isOpen={whatsappModalAberto}
           onClose={() => setWhatsappModalAberto(false)}
@@ -746,7 +860,7 @@ export default function VisualizarRomaneio() {
       )}
 
       {/* Modal de Etiquetas de Fardo */}
-      {romaneio && (
+      {etiquetaModalAberto && romaneio && (
         <ModalEtiquetaPacote
           isOpen={etiquetaModalAberto}
           onClose={() => setEtiquetaModalAberto(false)}

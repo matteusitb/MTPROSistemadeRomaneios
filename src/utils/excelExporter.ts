@@ -1,6 +1,4 @@
-/**
- * Utilitário para exportação de Romaneios e Resumos para Excel (.CSV / .XLSX compatível com UTF-8 BOM).
- */
+import { formatarDimensao } from './cubagemEngine';
 
 export interface DadosExportacaoExcel {
   id: number | string;
@@ -55,8 +53,8 @@ export function exportarRomaneioParaCSV(romaneio: DadosExportacaoExcel): void {
     const especie = p.especie || 'Mista';
     p.itens.forEach((it, idx) => {
       const compStr = Number(it.comprimento).toFixed(2).replace('.', ',');
-      const espStr = Number(it.espessura).toString().replace('.', ',');
-      const largStr = Number(it.largura).toString().replace('.', ',');
+      const espStr = formatarDimensao(it.espessura);
+      const largStr = formatarDimensao(it.largura);
       const mlStr = Number(it.volume_ml).toFixed(2).replace('.', ',');
       const m2Str = Number(it.volume_m2 || 0).toFixed(2).replace('.', ',');
       const m3Str = Number(it.volume_m3).toFixed(3).replace('.', ',');

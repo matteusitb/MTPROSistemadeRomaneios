@@ -2,14 +2,15 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useRomaneioStore, type RomaneioItem } from '../store/useRomaneioStore';
 import { Trash2, Plus, AlertCircle, Copy, ClipboardPaste, SlidersHorizontal } from 'lucide-react';
 import Swal from 'sweetalert2';
-import { calcularVolumeM3, calcularMetrosQuadrados, calcularMetrosLineares, validarToleranciaMedida } from '../utils/cubagemEngine';
+import { calcularVolumeM3, calcularMetrosQuadrados, calcularMetrosLineares, validarToleranciaMedida, formatarDimensao } from '../utils/cubagemEngine';
+import { useConfigStore } from '../store/useConfigStore';
 
 // Refs para foco automático na nova linha (por id de item)
 const newRowFocusRef: { [key: string]: HTMLInputElement | null } = {};
 
 const displayVal = (val: string | number | undefined | null) => {
   if (val === '' || val === undefined || val === null) return '';
-  return String(val).replace('.', ',');
+  return formatarDimensao(val);
 };
 
 // -------------------------------------------------------------
@@ -45,13 +46,14 @@ const InputEspessura = React.memo(({ item, onChangeGlobal, onBlurGlobal, onKeyDo
     let cleanVal = localValue.trim().replace(',', '.');
     if (cleanVal !== '' && !cleanVal.includes('.')) {
       const num = Number(cleanVal);
-      if (!isNaN(num) && num >= 10) {
+      if (!isNaN(num) && num > 99) {
         cleanVal = (num / 10).toString();
-        setLocalValue(cleanVal.replace('.', ','));
       }
     }
     const finalNum = Number(cleanVal);
-    onBlurGlobal(item.id, 'espessura', isNaN(finalNum) || cleanVal === '' ? cleanVal : finalNum);
+    const valParaSalvar = isNaN(finalNum) || cleanVal === '' ? cleanVal : finalNum;
+    setLocalValue(formatarDimensao(valParaSalvar));
+    onBlurGlobal(item.id, 'espessura', valParaSalvar);
   };
 
   return (
@@ -114,6 +116,9 @@ const InputLargura = React.memo(
 
       const handleBlur = () => {
         isFocusedRef.current = false;
+        if (tipoRomaneio !== 'aberta') {
+          setLocalValue(formatarDimensao(localValue));
+        }
         onBlurLargura(item.id, localValue);
       };
 
@@ -224,6 +229,17 @@ const InputQuantidade = React.memo(({ item, tipoRomaneio, onChangeGlobal, onBlur
   const [localValue, setLocalValue] = useState(() => (item.quantidade !== '' ? String(item.quantidade) : ''));
   const isFocusedRef = useRef(false);
 
+  const somaLarguraLinha = useMemo(() => {
+    if (!isAberta || !item.largura) return '';
+    const partes = String(item.largura)
+      .split(/[\s-]+/)
+      .map(p => Number(p.trim().replace(',', '.')))
+      .filter(x => !isNaN(x) && x > 0);
+    if (partes.length === 0) return '';
+    const total = partes.reduce((acc, curr) => acc + curr, 0);
+    return total % 1 === 0 ? total.toString() : total.toFixed(1).replace('.', ',');
+  }, [isAberta, item.largura]);
+
   useEffect(() => {
     if (!isFocusedRef.current) {
       setLocalValue(item.quantidade !== '' ? String(item.quantidade) : '');
@@ -252,15 +268,16 @@ const InputQuantidade = React.memo(({ item, tipoRomaneio, onChangeGlobal, onBlur
       disabled={isAberta}
       className={`w-full p-2.5 text-center border rounded-xl outline-none transition-all font-bold shadow-sm text-sm ${
         isAberta
-          ? 'bg-slate-100/80 dark:bg-slate-900/50 text-slate-400 dark:text-slate-500 border-slate-200/60 dark:border-slate-800/60 cursor-not-allowed'
+          ? 'bg-blue-50/60 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900/50 cursor-default'
           : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-500 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-800 dark:text-slate-100'
       }`}
-      value={isAberta ? item.quantidade : localValue}
+      value={isAberta ? (somaLarguraLinha || '') : localValue}
       onFocus={() => { isFocusedRef.current = true; }}
       onChange={handleChange}
       onBlur={handleBlur}
       onKeyDown={e => onKeyDown(e, item)}
-      placeholder={isAberta ? 'Auto' : 'Qtd'}
+      placeholder={isAberta ? '0' : 'Qtd'}
+      title={isAberta ? `Soma das larguras: ${somaLarguraLinha || 0} cm (${item.quantidade || 0} peças)` : undefined}
     />
   );
 });
@@ -278,6 +295,7 @@ interface LinhaGridRowProps {
   isUltima: boolean;
   linhaIncompleta: boolean;
   pacoteId: string;
+  exibirMetragensExtras: boolean;
   onChangeField: (itemId: string, field: keyof RomaneioItem, value: string) => void;
   onChangeLargura: (itemId: string, value: string) => void;
   onBlurField: (itemId: string, field: keyof RomaneioItem, value: string | number) => void;
@@ -293,6 +311,7 @@ const LinhaGridRowComponent = ({
   tipoRomaneio,
   linhaIncompleta,
   pacoteId,
+  exibirMetragensExtras,
   onChangeField,
   onChangeLargura,
   onBlurField,
@@ -301,10 +320,10 @@ const LinhaGridRowComponent = ({
   onDuplicate,
   onRemove
 }: LinhaGridRowProps) => {
-  const m3 = calcularVolumeM3(item.espessura, item.largura, item.comprimento, item.quantidade, tipoRomaneio);
-  const m2 = calcularMetrosQuadrados(item.largura, item.comprimento, item.quantidade, tipoRomaneio);
-  const ml = calcularMetrosLineares(item.comprimento, item.quantidade, tipoRomaneio);
-  const tolerancia = validarToleranciaMedida(item.espessura, item.largura, item.comprimento, tipoRomaneio);
+  const m3 = useMemo(() => calcularVolumeM3(item.espessura, item.largura, item.comprimento, item.quantidade, tipoRomaneio), [item.espessura, item.largura, item.comprimento, item.quantidade, tipoRomaneio]);
+  const m2 = useMemo(() => calcularMetrosQuadrados(item.largura, item.comprimento, item.quantidade, tipoRomaneio), [item.largura, item.comprimento, item.quantidade, tipoRomaneio]);
+  const ml = useMemo(() => calcularMetrosLineares(item.comprimento, item.quantidade, tipoRomaneio), [item.comprimento, item.quantidade, tipoRomaneio]);
+  const tolerancia = useMemo(() => validarToleranciaMedida(item.espessura, item.largura, item.comprimento, tipoRomaneio), [item.espessura, item.largura, item.comprimento, tipoRomaneio]);
 
   return (
     <tr
@@ -362,12 +381,16 @@ const LinhaGridRowComponent = ({
         />
       </td>
 
-      <td className="px-4 py-2 text-center text-slate-500 dark:text-slate-400 font-semibold text-sm">
-        {ml > 0 ? ml.toFixed(2) : '-'}
-      </td>
-      <td className="px-4 py-2 text-center text-slate-600 dark:text-slate-300 font-bold text-sm">
-        {m2 > 0 ? m2.toFixed(2) : '-'}
-      </td>
+      {exibirMetragensExtras && (
+        <>
+          <td className="px-4 py-2 text-center text-slate-500 dark:text-slate-400 font-semibold text-sm">
+            {ml > 0 ? ml.toFixed(2) : '-'}
+          </td>
+          <td className="px-4 py-2 text-center text-slate-600 dark:text-slate-300 font-bold text-sm">
+            {m2 > 0 ? m2.toFixed(2) : '-'}
+          </td>
+        </>
+      )}
       <td className="px-4 py-2 text-center font-black text-emerald-600 dark:text-emerald-450 text-sm">
         {m3 > 0 ? m3.toFixed(3) : '-'}
       </td>
@@ -405,7 +428,8 @@ const LinhaGridRow = React.memo(LinhaGridRowComponent, (prev, next) => {
     prev.isUltima === next.isUltima &&
     prev.linhaIncompleta === next.linhaIncompleta &&
     prev.tipoRomaneio === next.tipoRomaneio &&
-    prev.pacoteId === next.pacoteId
+    prev.pacoteId === next.pacoteId &&
+    prev.exibirMetragensExtras === next.exibirMetragensExtras
   );
 });
 
@@ -416,6 +440,7 @@ LinhaGridRow.displayName = 'LinhaGridRow';
 // -------------------------------------------------------------
 
 export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteIndex?: number }) {
+  const exibirMetragensExtras = useConfigStore(state => state.exibirMetragensExtras);
   const pacote = useRomaneioStore(useCallback(state => state.pacotes.find(p => p.id === pacoteId), [pacoteId]));
   const tipoRomaneio = useRomaneioStore(state => state.tipoRomaneio);
   const addItem = useRomaneioStore(state => state.addItem);
@@ -738,11 +763,12 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
   }, [handlePasteExcel]);
 
   const totaisCalculados = useMemo(() => {
-    if (!pacote) return { totalPacoteM3: 0, totalPacoteM2: 0, totalPacoteML: 0, totalPacotePecas: 0 };
+    if (!pacote) return { totalPacoteM3: 0, totalPacoteM2: 0, totalPacoteML: 0, totalPacotePecas: 0, totalSomaLarguras: 0 };
     let totalPacoteM3 = 0;
     let totalPacoteM2 = 0;
     let totalPacoteML = 0;
     let totalPacotePecas = 0;
+    let totalSomaLarguras = 0;
 
     const itens = pacote.itens;
     for (let i = 0; i < itens.length; i++) {
@@ -753,9 +779,16 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
         totalPacoteML += calcularMetrosLineares(item.comprimento, item.quantidade, tipoRomaneio);
         totalPacotePecas += Number(item.quantidade) || 0;
       }
+      if (tipoRomaneio === 'aberta' && item.largura) {
+        const partes = String(item.largura)
+          .split(/[\s-]+/)
+          .map(p => Number(p.trim().replace(',', '.')))
+          .filter(x => !isNaN(x) && x > 0);
+        totalSomaLarguras += partes.reduce((a, b) => a + b, 0);
+      }
     }
 
-    return { totalPacoteM3, totalPacoteM2, totalPacoteML, totalPacotePecas };
+    return { totalPacoteM3, totalPacoteM2, totalPacoteML, totalPacotePecas, totalSomaLarguras };
   }, [pacote?.itens, tipoRomaneio]);
 
   if (!pacote) return null;
@@ -811,9 +844,15 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
               <th className="px-4 py-3.5 text-center">
                 {tipoRomaneio === 'pes' ? 'Comprimento (pés)' : 'Comprimento (m)'}
               </th>
-              <th className="px-4 py-3.5 text-center w-24">Qtd</th>
-              <th className="px-4 py-3.5 text-center">Total ML</th>
-              <th className="px-4 py-3.5 text-center">Total M²</th>
+              <th className={`px-4 py-3.5 text-center ${tipoRomaneio === 'aberta' ? 'min-w-[130px]' : 'w-24'}`}>
+                {tipoRomaneio === 'aberta' ? 'Soma Larguras (cm)' : 'Qtd'}
+              </th>
+              {exibirMetragensExtras && (
+                <>
+                  <th className="px-4 py-3.5 text-center">Total ML</th>
+                  <th className="px-4 py-3.5 text-center">Total M²</th>
+                </>
+              )}
               <th className="px-4 py-3.5 text-center">Total M³</th>
               <th className="px-4 py-3.5 text-center w-20"></th>
             </tr>
@@ -832,6 +871,7 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
                   isUltima={isUltima}
                   linhaIncompleta={linhaIncompleta}
                   pacoteId={pacoteId}
+                  exibirMetragensExtras={exibirMetragensExtras}
                   onChangeField={handleChangeField}
                   onChangeLargura={handleChangeLargura}
                   onBlurField={handleBlurField}
@@ -849,14 +889,20 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
                 Totais do Pacote {pacote.numero}:
               </td>
               <td className="px-5 py-4 text-center font-black text-slate-800 dark:text-slate-200">
-                {totaisCalculados.totalPacotePecas} Peças
+                {tipoRomaneio === 'aberta'
+                  ? `${totaisCalculados.totalSomaLarguras % 1 === 0 ? totaisCalculados.totalSomaLarguras : totaisCalculados.totalSomaLarguras.toFixed(1).replace('.', ',')} cm`
+                  : `${totaisCalculados.totalPacotePecas} Peças`}
               </td>
-              <td className="px-5 py-4 text-center font-black text-slate-800 dark:text-slate-200">
-                {totaisCalculados.totalPacoteML.toFixed(2)} ML
-              </td>
-              <td className="px-5 py-4 text-center font-black text-slate-800 dark:text-slate-200">
-                {totaisCalculados.totalPacoteM2.toFixed(2)} M²
-              </td>
+              {exibirMetragensExtras && (
+                <>
+                  <td className="px-5 py-4 text-center font-black text-slate-800 dark:text-slate-200">
+                    {totaisCalculados.totalPacoteML.toFixed(2)} ML
+                  </td>
+                  <td className="px-5 py-4 text-center font-black text-slate-800 dark:text-slate-200">
+                    {totaisCalculados.totalPacoteM2.toFixed(2)} M²
+                  </td>
+                </>
+              )}
               <td className="px-5 py-4 text-center font-black text-emerald-600 dark:text-emerald-450">
                 {totaisCalculados.totalPacoteM3.toFixed(3)} M³
               </td>

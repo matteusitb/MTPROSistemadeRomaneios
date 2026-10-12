@@ -1,6 +1,7 @@
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
-import { processarItensPacote, calcularResumosConsolidados } from './cubagemEngine';
+import { processarItensPacote, calcularResumosConsolidados, formatarDimensao, formatarBitola } from './cubagemEngine';
+import { useConfigStore } from '../store/useConfigStore';
 
 // Configurar as fontes
 if (pdfMake && (pdfFonts as any)?.pdfMake?.vfs) {
@@ -9,6 +10,7 @@ if (pdfMake && (pdfFonts as any)?.pdfMake?.vfs) {
 
 export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
   const content: Record<string, unknown>[] = [];
+  const exibirMetragensExtras = useConfigStore.getState().exibirMetragensExtras;
 
   const totalMlCalculado = pacotes.reduce((acc, p) => acc + (Number(p.total_ml) || 0), 0);
   const totalM2Calculado = pacotes.reduce((acc, p) => acc + (Number(p.total_m2) || 0), 0);
@@ -88,33 +90,39 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
         { text: 'Esp(cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: romaneio.tipo_romaneio === 'pes' ? 'Comp(pés)' : 'Comp(m)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Larguras (cm)', bold: true, fillColor: '#e0f2fe', color: '#0284c7', alignment: 'left' },
-        { text: 'Qtd', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
+        { text: 'Soma Larguras (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
       ];
+      if (exibirMetragensExtras) {
+        headerAbertos.push({ text: 'ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+        headerAbertos.push({ text: 'M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+      }
+      headerAbertos.push({ text: 'M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
 
       const bodyAbertos: Record<string, unknown>[][] = [headerAbertos];
 
       abertos.forEach(grupo => {
-        const somaLarguras = grupo.larguras.reduce((a: number, b: number) => a + b, 0);
-        const largurasText = `${grupo.larguras.join(', ')} (Total: ${somaLarguras.toString().replace('.', ',')} cm)`;
+        const somaLarguras = grupo.soma_larguras || grupo.larguras.reduce((a: number, b: number) => a + b, 0);
+        const largurasText = grupo.larguras.map(formatarDimensao).join(', ');
         
-        bodyAbertos.push([
-          { text: grupo.espessura.toString().replace('.', ','), alignment: 'center' },
+        const rowAbertos: Record<string, unknown>[] = [
+          { text: formatarDimensao(grupo.espessura), alignment: 'center' },
           { text: grupo.comprimento.toFixed(2).replace('.', ','), alignment: 'center' },
           { text: largurasText, alignment: 'left', color: '#4b5563' },
-          { text: grupo.quantidade.toString(), alignment: 'center', bold: true },
-          { text: grupo.volume_ml.toFixed(2).replace('.', ','), alignment: 'center' },
-          { text: (grupo.volume_m2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
-          { text: grupo.volume_m3.toFixed(3).replace('.', ','), alignment: 'center', color: '#047857' }
-        ]);
+          { text: somaLarguras.toString().replace('.', ','), alignment: 'center', bold: true }
+        ];
+        if (exibirMetragensExtras) {
+          rowAbertos.push({ text: grupo.volume_ml.toFixed(2).replace('.', ','), alignment: 'center' });
+          rowAbertos.push({ text: (grupo.volume_m2 || 0).toFixed(2).replace('.', ','), alignment: 'center' });
+        }
+        rowAbertos.push({ text: grupo.volume_m3.toFixed(3).replace('.', ','), alignment: 'center', color: '#047857' });
+        
+        bodyAbertos.push(rowAbertos);
       });
 
       content.push({
         table: {
           headerRows: 1,
-          widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'],
+          widths: exibirMetragensExtras ? ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'] : ['auto', 'auto', '*', 'auto', 'auto'],
           body: bodyAbertos
         },
         layout: 'lightHorizontalLines',
@@ -143,11 +151,13 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
         { text: 'Espessura (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: 'Largura (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
         { text: romaneio.tipo_romaneio === 'pes' ? 'Comprimento (pés)' : 'Comprimento (m)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'Qtd', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
+        { text: 'Qtd', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
       ];
+      if (exibirMetragensExtras) {
+        headers.push({ text: 'ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+        headers.push({ text: 'M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+      }
+      headers.push({ text: 'M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
 
       const bodyNormais: Record<string, unknown>[][] = [ headers ];
 
@@ -159,14 +169,16 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
 
         const row: any[] = [
           { text: (idx + 1).toString(), alignment: 'center' },
-          { text: item.espessura.toString().replace('.', ','), alignment: 'center' },
-          { text: item.largura.toString().replace('.', ','), alignment: 'center' },
+          { text: formatarDimensao(item.espessura), alignment: 'center' },
+          { text: formatarDimensao(item.largura), alignment: 'center' },
           { text: romaneio.tipo_romaneio === 'pes' ? item.comprimento.toString().replace('.', ',') : item.comprimento.toFixed(2).replace('.', ','), alignment: 'center' },
-          { text: item.quantidade.toString(), alignment: 'center', bold: true },
-          { text: ml.toFixed(2).replace('.', ','), alignment: 'center' },
-          { text: m2.toFixed(2).replace('.', ','), alignment: 'center' },
-          { text: m3.toFixed(3).replace('.', ','), alignment: 'center', color: '#047857' }
+          { text: item.quantidade.toString(), alignment: 'center', bold: true }
         ];
+        if (exibirMetragensExtras) {
+          row.push({ text: ml.toFixed(2).replace('.', ','), alignment: 'center' });
+          row.push({ text: m2.toFixed(2).replace('.', ','), alignment: 'center' });
+        }
+        row.push({ text: m3.toFixed(3).replace('.', ','), alignment: 'center', color: '#047857' });
 
         bodyNormais.push(row);
       });
@@ -174,7 +186,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
       content.push({
         table: {
           headerRows: 1,
-          widths: ['auto', '*', '*', '*', 'auto', '*', '*', '*'],
+          widths: exibirMetragensExtras ? ['auto', '*', '*', '*', 'auto', '*', '*', '*'] : ['auto', '*', '*', '*', 'auto', '*'],
           body: bodyNormais
         },
         layout: 'lightHorizontalLines',
@@ -182,18 +194,27 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
       });
     }
 
+    const totalSomaLargurasPacote = abertos.reduce((acc: number, g: any) => acc + (Number(g.soma_larguras) || g.larguras.reduce((a: number, b: number) => a + b, 0)), 0);
+    const labelTotalPacote = romaneio.tipo_romaneio === 'aberta' && abertos.length > 0
+      ? `${totalSomaLargurasPacote.toString().replace('.', ',')} cm`
+      : `${totalPecasPacote} pçs`;
+
+    const rowTotais = [
+      { text: `TOTAIS DO PACOTE ${pacote.numero_pacote}`, bold: true, alignment: 'right', fillColor: '#f9fafb' },
+      { text: labelTotalPacote, bold: true, alignment: 'center', fillColor: '#f9fafb' }
+    ];
+    if (exibirMetragensExtras) {
+      rowTotais.push({ text: `${pacote.total_ml.toFixed(2).replace('.', ',')} ML`, bold: true, alignment: 'center', fillColor: '#f9fafb' } as any);
+      rowTotais.push({ text: `${(pacote.total_m2 || 0).toFixed(2).replace('.', ',')} M²`, bold: true, alignment: 'center', fillColor: '#f9fafb' } as any);
+    }
+    rowTotais.push({ text: `${pacote.total_m3.toFixed(3).replace('.', ',')} M³`, bold: true, alignment: 'center', fillColor: '#ecfdf5', color: '#047857' } as any);
+
     // Tabela de Totais do Pacote
     content.push({
       table: {
-        widths: ['*', 'auto', 'auto', 'auto', 'auto'],
+        widths: exibirMetragensExtras ? ['*', 'auto', 'auto', 'auto', 'auto'] : ['*', 'auto', 'auto'],
         body: [
-          [
-            { text: `TOTAIS DO PACOTE ${pacote.numero_pacote}`, bold: true, alignment: 'right', fillColor: '#f9fafb' },
-            { text: `${totalPecasPacote} pçs`, bold: true, alignment: 'center', fillColor: '#f9fafb' },
-            { text: `${pacote.total_ml.toFixed(2).replace('.', ',')} ML`, bold: true, alignment: 'center', fillColor: '#f9fafb' },
-            { text: `${(pacote.total_m2 || 0).toFixed(2).replace('.', ',')} M²`, bold: true, alignment: 'center', fillColor: '#f9fafb' },
-            { text: `${pacote.total_m3.toFixed(3).replace('.', ',')} M³`, bold: true, alignment: 'center', fillColor: '#ecfdf5', color: '#047857' }
-          ]
+          rowTotais
         ]
       },
       layout: 'lightHorizontalLines',
@@ -201,18 +222,22 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
     });
   });
 
+  const rowTotalGeral = [
+    { text: 'TOTAL GERAL DO ROMANEIO', bold: true, alignment: 'right', fontSize: 13 } as any
+  ];
+  if (exibirMetragensExtras) {
+    rowTotalGeral.push({ text: `${totalMlCalculado.toFixed(2).replace('.', ',')} ML`, bold: true, alignment: 'center', fontSize: 13 } as any);
+    rowTotalGeral.push({ text: `${totalM2Calculado.toFixed(2).replace('.', ',')} M²`, bold: true, alignment: 'center', fontSize: 13 } as any);
+  }
+  rowTotalGeral.push({ text: `${totalM3Calculado.toFixed(3).replace('.', ',')} M³`, bold: true, alignment: 'center', fontSize: 13, color: '#047857', fillColor: '#ecfdf5' } as any);
+
   // Totais Gerais
   content.push({
     margin: [0, 30, 0, 0],
     table: {
-      widths: ['*', 'auto', 'auto', 'auto'],
+      widths: exibirMetragensExtras ? ['*', 'auto', 'auto', 'auto'] : ['*', 'auto'],
       body: [
-        [
-          { text: 'TOTAL GERAL DO ROMANEIO', bold: true, alignment: 'right', fontSize: 13 },
-          { text: `${totalMlCalculado.toFixed(2).replace('.', ',')} ML`, bold: true, alignment: 'center', fontSize: 13 },
-          { text: `${totalM2Calculado.toFixed(2).replace('.', ',')} M²`, bold: true, alignment: 'center', fontSize: 13 },
-          { text: `${totalM3Calculado.toFixed(3).replace('.', ',')} M³`, bold: true, alignment: 'center', fontSize: 13, color: '#047857', fillColor: '#ecfdf5' }
-        ]
+        rowTotalGeral
       ]
     },
     layout: 'noBorders'
@@ -231,70 +256,85 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
   });
 
   // Tabela por Espécie
-  const bodyEspecie: Record<string, unknown>[][] = [
-    [
-      { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
-    ]
+  const headerEspecie = [
+    { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
   ];
+  if (exibirMetragensExtras) {
+    headerEspecie.push({ text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    headerEspecie.push({ text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+  }
+  headerEspecie.push({ text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+  headerEspecie.push({ text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+
+  const bodyEspecie: Record<string, unknown>[][] = [ headerEspecie ];
 
   resumos.porEspecie.forEach(item => {
-    bodyEspecie.push([
-      { text: item.especie, bold: true, alignment: 'left' },
-      { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
-      { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
-      { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
-      { text: `${item.percentual.toFixed(1)}%`, alignment: 'center' }
-    ]);
+    const row = [
+      { text: item.especie, bold: true, alignment: 'left' }
+    ];
+    if (exibirMetragensExtras) {
+      row.push({ text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' } as any);
+      row.push({ text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' } as any);
+    }
+    row.push({ text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' } as any);
+    row.push({ text: `${item.percentual.toFixed(1)}%`, alignment: 'center' } as any);
+    bodyEspecie.push(row);
   });
 
   // Tabela por Bitola
-  const bodyBitola: Record<string, unknown>[][] = [
-    [
-      { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Bitola (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
-    ]
+  const headerBitola = [
+    { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+    { text: 'Bitola (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
   ];
+  if (exibirMetragensExtras) {
+    headerBitola.push({ text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    headerBitola.push({ text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+  }
+  headerBitola.push({ text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+  headerBitola.push({ text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+
+  const bodyBitola: Record<string, unknown>[][] = [ headerBitola ];
 
   resumos.porBitola.forEach(item => {
-    bodyBitola.push([
+    const row = [
       { text: item.especie, alignment: 'left' },
-      { text: `${item.espessura.toString().replace('.', ',')} x ${item.largura.toString().replace('.', ',')}`, bold: true, alignment: 'center' },
-      { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
-      { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
-      { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
-      { text: `${item.percentual.toFixed(1)}%`, alignment: 'center' }
-    ]);
+      { text: formatarBitola(item.espessura, item.largura, ' x '), bold: true, alignment: 'center' }
+    ];
+    if (exibirMetragensExtras) {
+      row.push({ text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' } as any);
+      row.push({ text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' } as any);
+    }
+    row.push({ text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' } as any);
+    row.push({ text: `${item.percentual.toFixed(1)}%`, alignment: 'center' } as any);
+    bodyBitola.push(row);
   });
 
   // Tabela por Largura
-  const bodyLargura: Record<string, unknown>[][] = [
-    [
-      { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Largura (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
-    ]
+  const headerLargura = [
+    { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+    { text: 'Largura (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
   ];
+  if (exibirMetragensExtras) {
+    headerLargura.push({ text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    headerLargura.push({ text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+  }
+  headerLargura.push({ text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+  headerLargura.push({ text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+
+  const bodyLargura: Record<string, unknown>[][] = [ headerLargura ];
 
   resumos.porLargura.forEach(item => {
-    bodyLargura.push([
+    const row = [
       { text: item.especie, alignment: 'left' },
-      { text: `${item.largura.toString().replace('.', ',')} cm`, bold: true, alignment: 'center' },
-      { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
-      { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
-      { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
-      { text: `${item.percentual.toFixed(1)}%`, alignment: 'center' }
-    ]);
+      { text: `${formatarDimensao(item.largura)} cm`, bold: true, alignment: 'center' }
+    ];
+    if (exibirMetragensExtras) {
+      row.push({ text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' } as any);
+      row.push({ text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' } as any);
+    }
+    row.push({ text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' } as any);
+    row.push({ text: `${item.percentual.toFixed(1)}%`, alignment: 'center' } as any);
+    bodyLargura.push(row);
   });
 
   content.push({
@@ -308,7 +348,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
   content.push({
     table: {
       headerRows: 1,
-      widths: ['*', 'auto', 'auto', 'auto', 'auto'],
+      widths: exibirMetragensExtras ? ['*', 'auto', 'auto', 'auto', 'auto'] : ['*', 'auto', 'auto'],
       body: bodyEspecie
     },
     layout: 'lightHorizontalLines',
@@ -392,7 +432,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
     content.push({
       table: {
         headerRows: 1,
-        widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+        widths: exibirMetragensExtras ? ['*', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['*', 'auto', 'auto', 'auto'],
         body: bodyBitola
       },
       layout: 'lightHorizontalLines',
@@ -410,7 +450,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
     content.push({
       table: {
         headerRows: 1,
-        widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+        widths: exibirMetragensExtras ? ['*', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['*', 'auto', 'auto', 'auto'],
         body: bodyLargura
       },
       layout: 'lightHorizontalLines',
@@ -456,6 +496,7 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
 
 export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
   const content: Record<string, unknown>[] = [];
+  const exibirMetragensExtras = useConfigStore.getState().exibirMetragensExtras;
 
   const totalMlCalculado = pacotes.reduce((acc, p) => acc + (Number(p.total_ml) || 0), 0);
   const totalM2Calculado = pacotes.reduce((acc, p) => acc + (Number(p.total_m2) || 0), 0);
@@ -527,24 +568,32 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
   });
 
   // Caixa de Indicadores / Totais Gerais
+  const headerIndicadores = [
+    { text: 'TOTAL DE PACOTES', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
+    { text: 'TOTAL DE PEÇAS', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' }
+  ];
+  if (exibirMetragensExtras) {
+    headerIndicadores.push({ text: 'METROS LINEARES (ML)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' });
+    headerIndicadores.push({ text: 'ÁREA TOTAL (M²)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' });
+  }
+  headerIndicadores.push({ text: 'VOLUME TOTAL (M³)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#ecfdf5', color: '#047857' });
+
+  const rowIndicadores = [
+    { text: `${pacotes.length} pct`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
+    { text: `${totalPecasGeral} un`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' }
+  ];
+  if (exibirMetragensExtras) {
+    rowIndicadores.push({ text: totalMlCalculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' } as any);
+    rowIndicadores.push({ text: totalM2Calculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' } as any);
+  }
+  rowIndicadores.push({ text: totalM3Calculado.toFixed(3).replace('.', ','), fontSize: 13, bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' } as any);
+
   content.push({
     table: {
-      widths: ['*', '*', '*', '*', '*'],
+      widths: exibirMetragensExtras ? ['*', '*', '*', '*', '*'] : ['*', '*', '*'],
       body: [
-        [
-          { text: 'TOTAL DE PACOTES', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
-          { text: 'TOTAL DE PEÇAS', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
-          { text: 'METROS LINEARES (ML)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
-          { text: 'ÁREA TOTAL (M²)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
-          { text: 'VOLUME TOTAL (M³)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#ecfdf5', color: '#047857' }
-        ],
-        [
-          { text: `${pacotes.length} pct`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
-          { text: `${totalPecasGeral} un`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
-          { text: totalMlCalculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
-          { text: totalM2Calculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
-          { text: totalM3Calculado.toFixed(3).replace('.', ','), fontSize: 13, bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' }
-        ]
+        headerIndicadores,
+        rowIndicadores
       ]
     },
     margin: [0, 0, 0, 15],
@@ -557,26 +606,31 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
   });
 
   // Tabela por Espécie
-  const bodyEspecie: Record<string, unknown>[][] = [
-    [
-      { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Peças', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
-    ]
+  const headerEspecie = [
+    { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+    { text: 'Peças', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
   ];
+  if (exibirMetragensExtras) {
+    headerEspecie.push({ text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    headerEspecie.push({ text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+  }
+  headerEspecie.push({ text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+  headerEspecie.push({ text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+
+  const bodyEspecie: Record<string, unknown>[][] = [ headerEspecie ];
 
   resumos.porEspecie.forEach(item => {
-    bodyEspecie.push([
+    const row = [
       { text: item.especie, bold: true, alignment: 'left' },
-      { text: item.totalPecas.toString(), alignment: 'center' },
-      { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
-      { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
-      { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
-      { text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true }
-    ]);
+      { text: item.totalPecas.toString(), alignment: 'center' }
+    ];
+    if (exibirMetragensExtras) {
+      row.push({ text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' } as any);
+      row.push({ text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' } as any);
+    }
+    row.push({ text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' } as any);
+    row.push({ text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true } as any);
+    bodyEspecie.push(row);
   });
 
   content.push({
@@ -590,7 +644,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
   content.push({
     table: {
       headerRows: 1,
-      widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+      widths: exibirMetragensExtras ? ['*', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['*', 'auto', 'auto', 'auto'],
       body: bodyEspecie
     },
     layout: 'lightHorizontalLines',
@@ -665,28 +719,33 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
 
   // Tabela por Bitola ou Largura
   if (romaneio.tipo_romaneio === 'padrao' || romaneio.tipo_romaneio === 'aberta') {
-    const bodyBitola: Record<string, unknown>[][] = [
-      [
-        { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'Bitola (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'Peças', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
-      ]
+    const headerBitola = [
+      { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Bitola (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Peças', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
     ];
+    if (exibirMetragensExtras) {
+      headerBitola.push({ text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+      headerBitola.push({ text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    }
+    headerBitola.push({ text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    headerBitola.push({ text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+
+    const bodyBitola: Record<string, unknown>[][] = [ headerBitola ];
 
     resumos.porBitola.forEach(item => {
-      bodyBitola.push([
+      const row = [
         { text: item.especie, alignment: 'left' },
-        { text: `${item.espessura.toString().replace('.', ',')} x ${item.largura.toString().replace('.', ',')}`, bold: true, alignment: 'center' },
-        { text: item.totalPecas.toString(), alignment: 'center' },
-        { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
-        { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
-        { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
-        { text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true }
-      ]);
+        { text: formatarBitola(item.espessura, item.largura, ' x '), bold: true, alignment: 'center' },
+        { text: item.totalPecas.toString(), alignment: 'center' }
+      ];
+      if (exibirMetragensExtras) {
+        row.push({ text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' } as any);
+        row.push({ text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' } as any);
+      }
+      row.push({ text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' } as any);
+      row.push({ text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true } as any);
+      bodyBitola.push(row);
     });
 
     content.push({
@@ -700,33 +759,38 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
     content.push({
       table: {
         headerRows: 1,
-        widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+        widths: exibirMetragensExtras ? ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['*', 'auto', 'auto', 'auto', 'auto'],
         body: bodyBitola
       },
       layout: 'lightHorizontalLines',
       margin: [0, 0, 0, 14]
     });
   } else if (romaneio.tipo_romaneio === 'pes') {
-    const bodyLargura: Record<string, unknown>[][] = [
-      [
-        { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'Largura (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-        { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
-      ]
+    const headerLargura = [
+      { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Largura (cm)', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
     ];
+    if (exibirMetragensExtras) {
+      headerLargura.push({ text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+      headerLargura.push({ text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    }
+    headerLargura.push({ text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    headerLargura.push({ text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+
+    const bodyLargura: Record<string, unknown>[][] = [ headerLargura ];
 
     resumos.porLargura.forEach(item => {
-      bodyLargura.push([
+      const row = [
         { text: item.especie, alignment: 'left' },
-        { text: `${item.largura.toString().replace('.', ',')} cm`, bold: true, alignment: 'center' },
-        { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
-        { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
-        { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
-        { text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true }
-      ]);
+        { text: `${formatarDimensao(item.largura)} cm`, bold: true, alignment: 'center' }
+      ];
+      if (exibirMetragensExtras) {
+        row.push({ text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' } as any);
+        row.push({ text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' } as any);
+      }
+      row.push({ text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' } as any);
+      row.push({ text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true } as any);
+      bodyLargura.push(row);
     });
 
     content.push({
@@ -740,7 +804,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
     content.push({
       table: {
         headerRows: 1,
-        widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'],
+        widths: exibirMetragensExtras ? ['*', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['*', 'auto', 'auto', 'auto'],
         body: bodyLargura
       },
       layout: 'lightHorizontalLines',
@@ -788,6 +852,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
  */
 export const gerarPdfResumoDetalhadoBitola = (romaneio: any, pacotes: any[]) => {
   const content: Record<string, unknown>[] = [];
+  const exibirMetragensExtras = useConfigStore.getState().exibirMetragensExtras;
 
   const totalMlCalculado = pacotes.reduce((acc, p) => acc + (Number(p.total_ml) || 0), 0);
   const totalM2Calculado = pacotes.reduce((acc, p) => acc + (Number(p.total_m2) || 0), 0);
@@ -860,24 +925,32 @@ export const gerarPdfResumoDetalhadoBitola = (romaneio: any, pacotes: any[]) => 
   });
 
   // Caixa de Indicadores / Totais Gerais
+  const headerIndicadores = [
+    { text: 'TOTAL DE PACOTES', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
+    { text: 'TOTAL DE PEÇAS', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' }
+  ];
+  if (exibirMetragensExtras) {
+    headerIndicadores.push({ text: 'METROS LINEARES (ML)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' });
+    headerIndicadores.push({ text: 'ÁREA TOTAL (M²)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' });
+  }
+  headerIndicadores.push({ text: 'VOLUME TOTAL (M³)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#ecfdf5', color: '#047857' });
+
+  const rowIndicadores = [
+    { text: `${pacotes.length} pct`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
+    { text: `${totalPecasGeral} un`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' }
+  ];
+  if (exibirMetragensExtras) {
+    rowIndicadores.push({ text: totalMlCalculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' } as any);
+    rowIndicadores.push({ text: totalM2Calculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' } as any);
+  }
+  rowIndicadores.push({ text: totalM3Calculado.toFixed(3).replace('.', ','), fontSize: 13, bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' } as any);
+
   content.push({
     table: {
-      widths: ['*', '*', '*', '*', '*'],
+      widths: exibirMetragensExtras ? ['*', '*', '*', '*', '*'] : ['*', '*', '*'],
       body: [
-        [
-          { text: 'TOTAL DE PACOTES', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
-          { text: 'TOTAL DE PEÇAS', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
-          { text: 'METROS LINEARES (ML)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
-          { text: 'ÁREA TOTAL (M²)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#f8fafc', color: '#64748b' },
-          { text: 'VOLUME TOTAL (M³)', bold: true, fontSize: 8, alignment: 'center', fillColor: '#ecfdf5', color: '#047857' }
-        ],
-        [
-          { text: `${pacotes.length} pct`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
-          { text: `${totalPecasGeral} un`, fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
-          { text: totalMlCalculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
-          { text: totalM2Calculado.toFixed(2).replace('.', ','), fontSize: 12, bold: true, alignment: 'center', fillColor: '#f8fafc' },
-          { text: totalM3Calculado.toFixed(3).replace('.', ','), fontSize: 13, bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' }
-        ]
+        headerIndicadores,
+        rowIndicadores
       ]
     },
     margin: [0, 0, 0, 15],
@@ -890,43 +963,52 @@ export const gerarPdfResumoDetalhadoBitola = (romaneio: any, pacotes: any[]) => 
   });
 
   // Tabela Detalhada por Bitola e Comprimento
-  const bodyDetalhada: Record<string, unknown>[][] = [
-    [
-      { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'left' },
-      { text: `Dimensões (Esp × Larg × Comp)`, bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Peças', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
-      { text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
-    ]
+  const headerDetalhada = [
+    { text: 'Espécie', bold: true, fillColor: '#f3f4f6', alignment: 'left' },
+    { text: `Dimensões (Esp × Larg × Comp)`, bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+    { text: 'Peças', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
   ];
+  if (exibirMetragensExtras) {
+    headerDetalhada.push({ text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    headerDetalhada.push({ text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+  }
+  headerDetalhada.push({ text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+  headerDetalhada.push({ text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+
+  const bodyDetalhada: Record<string, unknown>[][] = [ headerDetalhada ];
 
   resumos.porBitolaComprimento.forEach(item => {
     const compFormatado = Number(item.comprimento).toFixed(2).replace('.', ',');
-    const dimText = `${item.espessura.toString().replace('.', ',')} × ${item.largura.toString().replace('.', ',')} × ${compFormatado}${unidadeComp}`;
+    const dimText = `${formatarDimensao(item.espessura)} × ${formatarDimensao(item.largura)} × ${compFormatado}${unidadeComp}`;
 
-    bodyDetalhada.push([
+    const row = [
       { text: item.especie, alignment: 'left', bold: true },
       { text: dimText, alignment: 'center', bold: true, color: '#1e293b' },
-      { text: item.totalPecas.toString(), alignment: 'center', bold: true },
-      { text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' },
-      { text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' },
-      { text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' },
-      { text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true }
-    ]);
+      { text: item.totalPecas.toString(), alignment: 'center', bold: true }
+    ];
+    if (exibirMetragensExtras) {
+      row.push({ text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' } as any);
+      row.push({ text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' } as any);
+    }
+    row.push({ text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' } as any);
+    row.push({ text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true } as any);
+    bodyDetalhada.push(row);
   });
 
   // Linha de Total Geral no Rodapé da Tabela
-  bodyDetalhada.push([
+  const rowTotalGeral = [
     { text: 'TOTAL GERAL', bold: true, alignment: 'left', fillColor: '#f1f5f9' },
     { text: `${resumos.porBitolaComprimento.length} combinações`, bold: true, alignment: 'center', fillColor: '#f1f5f9', color: '#64748b' },
-    { text: totalPecasGeral.toString(), bold: true, alignment: 'center', fillColor: '#f1f5f9' },
-    { text: totalMlCalculado.toFixed(2).replace('.', ','), bold: true, alignment: 'center', fillColor: '#f1f5f9' },
-    { text: totalM2Calculado.toFixed(2).replace('.', ','), bold: true, alignment: 'center', fillColor: '#f1f5f9' },
-    { text: totalM3Calculado.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#d1fae5' },
-    { text: '100,0%', bold: true, alignment: 'center', fillColor: '#f1f5f9' }
-  ]);
+    { text: totalPecasGeral.toString(), bold: true, alignment: 'center', fillColor: '#f1f5f9' }
+  ];
+  if (exibirMetragensExtras) {
+    rowTotalGeral.push({ text: totalMlCalculado.toFixed(2).replace('.', ','), bold: true, alignment: 'center', fillColor: '#f1f5f9' } as any);
+    rowTotalGeral.push({ text: totalM2Calculado.toFixed(2).replace('.', ','), bold: true, alignment: 'center', fillColor: '#f1f5f9' } as any);
+  }
+  rowTotalGeral.push({ text: totalM3Calculado.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#d1fae5' } as any);
+  rowTotalGeral.push({ text: '100,0%', bold: true, alignment: 'center', fillColor: '#f1f5f9' } as any);
+  
+  bodyDetalhada.push(rowTotalGeral);
 
   content.push({
     text: 'Tabela de Resumo Agrupado (Bitola × Comprimento)',
@@ -939,7 +1021,7 @@ export const gerarPdfResumoDetalhadoBitola = (romaneio: any, pacotes: any[]) => 
   content.push({
     table: {
       headerRows: 1,
-      widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
+      widths: exibirMetragensExtras ? ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['*', 'auto', 'auto', 'auto', 'auto'],
       body: bodyDetalhada
     },
     layout: 'lightHorizontalLines',

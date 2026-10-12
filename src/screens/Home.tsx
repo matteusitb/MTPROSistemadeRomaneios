@@ -11,6 +11,7 @@ import { motion } from 'framer-motion';
 import { ModalWhatsApp, WhatsAppIcon } from '../components/ModalWhatsApp';
 import { ModalTipoRomaneio } from '../components/ModalTipoRomaneio';
 import { exportarRomaneioParaCSV } from '../utils/excelExporter';
+import { useConfigStore } from '../store/useConfigStore';
 
 const ITENS_POR_PAGINA = 15;
 
@@ -19,6 +20,7 @@ export default function Home() {
   const loadRomaneio = useRomaneioStore(state => state.loadRomaneio);
   const resetForm = useRomaneioStore(state => state.resetForm);
   const setTipoRomaneio = useRomaneioStore(state => state.setTipoRomaneio);
+  const exibirMetragensExtras = useConfigStore(state => state.exibirMetragensExtras);
   const [romaneios, setRomaneios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -560,24 +562,28 @@ export default function Home() {
 
                   <div className="flex flex-col sm:flex-row gap-6 items-center justify-between lg:justify-end lg:flex-1 border-t lg:border-t-0 dark:border-slate-800 pt-4 lg:pt-0">
                     <div className="flex gap-6 px-4 w-full sm:w-auto justify-around sm:justify-end">
-                      <div className="text-right">
-                        <span className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.1em] mb-1">
-                          Total ML
-                        </span>
-                        <span className="font-bold text-slate-600 dark:text-slate-350 text-base">
-                          {(romaneio.total_ml || 0).toFixed(2)}{' '}
-                          <span className="text-xs text-slate-400">ml</span>
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.1em] mb-1">
-                          Total M²
-                        </span>
-                        <span className="font-bold text-blue-600 dark:text-blue-400 text-base">
-                          {(romaneio.total_m2 || 0).toFixed(2)}{' '}
-                          <span className="text-xs text-blue-500/70">m²</span>
-                        </span>
-                      </div>
+                      {exibirMetragensExtras && (
+                        <>
+                          <div className="text-right">
+                            <span className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.1em] mb-1">
+                              Total ML
+                            </span>
+                            <span className="font-bold text-slate-600 dark:text-slate-350 text-base">
+                              {(romaneio.total_ml || 0).toFixed(2)}{' '}
+                              <span className="text-xs text-slate-400">ml</span>
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.1em] mb-1">
+                              Total M²
+                            </span>
+                            <span className="font-bold text-blue-600 dark:text-blue-400 text-base">
+                              {(romaneio.total_m2 || 0).toFixed(2)}{' '}
+                              <span className="text-xs text-blue-500/70">m²</span>
+                            </span>
+                          </div>
+                        </>
+                      )}
                       <div className="text-right">
                         <span className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.1em] mb-1">
                           Total M³

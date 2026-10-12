@@ -3,11 +3,12 @@ import {
   Database, HardDriveDownload, FolderOpen, Clock, Shield,
   ToggleLeft, ToggleRight, Save, Trash2, AlertTriangle,
   CheckCircle2, XCircle, Copy, Check, X, RefreshCw,
-  Search, ArrowUpCircle, Download, RotateCcw
+  Search, ArrowUpCircle, Download, RotateCcw, Ruler
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Swal from 'sweetalert2';
 import { supabase } from '../utils/supabaseClient';
+import { useConfigStore } from '../store/useConfigStore';
 
 interface DbInfo {
   path: string;
@@ -41,6 +42,7 @@ function formatDate(iso?: string) {
 }
 
 export default function Configuracoes() {
+  const { exibirMetragensExtras, toggleExibirMetragensExtras } = useConfigStore();
   const [dbInfo, setDbInfo] = useState<DbInfo | null>(null);
   const [backupConfig, setBackupConfig] = useState<BackupConfig>({});
   const [loadingInfo, setLoadingInfo] = useState(true);
@@ -739,6 +741,44 @@ export default function Configuracoes() {
                 <><RotateCcw size={20} strokeWidth={2.5} /> Restaurar Backup Agora</>
               )}
             </button>
+          </motion.div>
+
+          {/* ── EXIBIÇÃO DE METRAGENS LINEARES E QUADRADAS ── */}
+          <motion.div variants={itemVariants} className="glass-card p-8 flex flex-col gap-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 p-3.5 rounded-2xl">
+                  <Ruler size={26} strokeWidth={2} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Metragens Lineares e Quadradas</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                    {exibirMetragensExtras
+                      ? 'Exibindo ML e M² em todo o sistema e relatórios PDF'
+                      : 'Ocultas (Padrão: Exibindo apenas M³)'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={toggleExibirMetragensExtras}
+                className="flex-shrink-0 transition-all hover:scale-105 cursor-pointer"
+                title={exibirMetragensExtras ? 'Ocultar ML e M²' : 'Exibir ML e M²'}
+              >
+                {exibirMetragensExtras
+                  ? <ToggleRight size={44} className="text-emerald-500" strokeWidth={1.5} />
+                  : <ToggleLeft size={44} className="text-slate-300 dark:text-slate-600" strokeWidth={1.5} />
+                }
+              </button>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-950 rounded-2xl p-5 space-y-2 border border-slate-100 dark:border-slate-800 text-xs font-medium text-slate-600 dark:text-slate-400 leading-relaxed">
+              <p>
+                Como a <strong>metragem cúbica (M³)</strong> é a unidade oficial e padrão do setor, desativar esta opção simplifica as visualizações e o romaneio em PDF para clientes que não necessitam de metros lineares (ML) ou metros quadrados (M²).
+              </p>
+              <p className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5 pt-1">
+                <CheckCircle2 size={14} /> Você também pode alternar essa exibição rapidamente com 1 clique diretamente na tela de edição do romaneio.
+              </p>
+            </div>
           </motion.div>
 
           {/* ── BACKUP AUTOMÁTICO ── */}
