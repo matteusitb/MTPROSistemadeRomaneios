@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Ativação e Anti-Clonagem
   checkActivationStatus: () => ipcRenderer.invoke('check-activation-status'),
+  getLicenseDetails: () => ipcRenderer.invoke('get-license-details'),
   ativarSistema: (chave) => ipcRenderer.invoke('ativar-sistema', chave),
 
   // Compartilhamento & Arquivos (WhatsApp)

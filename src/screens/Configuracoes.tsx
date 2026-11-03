@@ -3,12 +3,13 @@ import {
   Database, HardDriveDownload, FolderOpen, Clock, Shield,
   ToggleLeft, ToggleRight, Save, Trash2, AlertTriangle,
   CheckCircle2, XCircle, Copy, Check, X, RefreshCw,
-  Search, ArrowUpCircle, Download, RotateCcw, Ruler
+  Search, ArrowUpCircle, Download, RotateCcw, Ruler, KeyRound
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Swal from 'sweetalert2';
 import { supabase } from '../utils/supabaseClient';
 import { useConfigStore } from '../store/useConfigStore';
+import { ModalAtivacao } from '../components/ModalAtivacao';
 
 interface DbInfo {
   path: string;
@@ -73,10 +74,33 @@ export default function Configuracoes() {
   const [downloadProgress, setDownloadProgress] = useState<{ percent: number; bytesPerSecond: number; transferred: number; total: number } | null>(null);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
   const [checkingError, setCheckingError] = useState<string | null>(null);
-  const [appVersion, setAppVersion] = useState('1.0.10');
+  const [appVersion, setAppVersion] = useState('1.0.15');
+
+  // Estados de Licença
+  const [licenseInfo, setLicenseInfo] = useState<{
+    ativado: boolean;
+    isTrial?: boolean;
+    diasRestantes?: number;
+    validade?: string;
+    hardwareId?: string;
+  } | null>(null);
+  const [modalLicencaAberto, setModalLicencaAberto] = useState(false);
+  const [copiadoHwId, setCopiadoHwId] = useState(false);
+
+  const carregarLicenca = async () => {
+    if (window.electronAPI && typeof window.electronAPI.checkActivationStatus === 'function') {
+      try {
+        const res = await window.electronAPI.checkActivationStatus();
+        setLicenseInfo(res);
+      } catch (e) {
+        console.error('Erro ao carregar status da licença:', e);
+      }
+    }
+  };
 
   useEffect(() => {
     carregarDados();
+    carregarLicenca();
 
     if (window.electronAPI && typeof window.electronAPI.getAppVersion === 'function') {
       window.electronAPI.getAppVersion().then(v => {
@@ -1001,6 +1025,69 @@ export default function Configuracoes() {
             </button>
           </motion.div>
 
+          {/* ── LICENÇA E ATIVAÇÃO ── */}
+          <motion.div variants={itemVariants} className="glass-card p-8 flex flex-col gap-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className={`p-3.5 rounded-2xl ${licenseInfo?.isTrial ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400' : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'}`}>
+                  <KeyRound size={26} strokeWidth={2} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">Licenciamento de Uso</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                    {licenseInfo?.isTrial 
+                      ? `Modo Demonstração (Trial: ${licenseInfo?.diasRestantes ?? 0} dias restantes)` 
+                      : `Licença Ativa (Válida até ${licenseInfo?.validade || 'indeterminado'})`}
+                  </p>
+                </div>
+              </div>
+              <span className={`px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider ${
+                licenseInfo?.isTrial 
+                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30' 
+                  : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+              }`}>
+                {licenseInfo?.isTrial ? 'Trial' : 'Ativa'}
+              </span>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-950 rounded-2xl p-5 space-y-3 border border-slate-100 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-350">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider text-[10px]">Identificador do Dispositivo (Hardware ID):</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 select-all max-w-[240px] truncate" title={licenseInfo?.hardwareId || ''}>
+                    {licenseInfo?.hardwareId || 'Carregando...'}
+                  </span>
+                  {licenseInfo?.hardwareId && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(licenseInfo.hardwareId || '');
+                        setCopiadoHwId(true);
+                        setTimeout(() => setCopiadoHwId(false), 2000);
+                      }}
+                      className="p-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer"
+                      title="Copiar Hardware ID"
+                    >
+                      {copiadoHwId ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1 border-t border-slate-200/50 dark:border-slate-800/60 text-xs">
+                <span className="text-slate-400 font-bold">Validade da Licença:</span>
+                <span className="font-bold text-slate-700 dark:text-slate-200">{licenseInfo?.validade || (licenseInfo?.isTrial ? `${licenseInfo?.diasRestantes ?? 0} dias` : 'Válida')}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setModalLicencaAberto(true)}
+              className="w-full bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white px-6 py-3.5 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 hover:-translate-y-0.5 shadow-md cursor-pointer"
+            >
+              <KeyRound size={18} strokeWidth={2} />
+              <span>{licenseInfo?.isTrial ? 'Ativar Licença Definitiva' : 'Renovar / Alterar Chave de Licença'}</span>
+            </button>
+          </motion.div>
+
           {/* ── ATUALIZAÇÕES DO SISTEMA ── */}
           <motion.div variants={itemVariants} className="glass-card p-8 flex flex-col gap-6">
             <div className="flex items-center gap-4">
@@ -1293,6 +1380,19 @@ export default function Configuracoes() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Modal de Ativação / Renovação da Licença */}
+      <ModalAtivacao
+        isOpen={modalLicencaAberto}
+        onClose={() => setModalLicencaAberto(false)}
+        onActivated={() => {
+          setModalLicencaAberto(false);
+          carregarLicenca();
+        }}
+        diasRestantes={licenseInfo?.diasRestantes}
+        validade={licenseInfo?.validade}
+        isTrial={licenseInfo?.isTrial}
+      />
     </>
   );
 }

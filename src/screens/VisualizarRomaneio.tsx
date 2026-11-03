@@ -241,6 +241,57 @@ const ResumoConsolidadoView = memo(({
             </div>
           </div>
 
+          {resumos.porEspessura && resumos.porEspessura.length > 1 && (
+            <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-850">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                  Consolidado por Espessura
+                </h4>
+                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200/50 dark:border-emerald-800/40">
+                  {resumos.porEspessura.length} espessuras
+                </span>
+              </div>
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05)]">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 uppercase text-[9px] font-black tracking-widest border-b border-slate-200 dark:border-slate-800">
+                    <tr>
+                      <th className="px-5 py-4">Espessura</th>
+                      <th className="px-5 py-4 text-center">Peças</th>
+                      {exibirMetragensExtras && (
+                        <>
+                          <th className="px-5 py-4 text-center">Total ML</th>
+                          <th className="px-5 py-4 text-center">Total M²</th>
+                        </>
+                      )}
+                      <th className="px-5 py-4 text-center">Total M³</th>
+                      <th className="px-5 py-4 text-center w-28">% Vol</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                    {resumos.porEspessura.map((item: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100">
+                          Espessura {formatarDimensao(item.espessura)} cm
+                        </td>
+                        <td className="px-5 py-3.5 text-center font-semibold">{item.totalPecas}</td>
+                        {exibirMetragensExtras && (
+                          <>
+                            <td className="px-5 py-3.5 text-center font-semibold">{item.totalMl.toFixed(2).replace('.', ',')}</td>
+                            <td className="px-5 py-3.5 text-center font-bold text-blue-600 dark:text-blue-400">{(item.totalM2 || 0).toFixed(2).replace('.', ',')}</td>
+                          </>
+                        )}
+                        <td className="px-5 py-3.5 text-center font-black text-emerald-600 dark:text-emerald-450">{item.totalM3.toFixed(3).replace('.', ',')}</td>
+                        <td className="px-5 py-3.5 text-center">
+                          <span className="font-bold text-slate-500 dark:text-slate-400">{item.percentual.toFixed(1)}%</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-850">
             <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
               Consolidado por Categoria de Comprimento

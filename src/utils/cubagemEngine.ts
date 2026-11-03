@@ -105,11 +105,21 @@ export interface ResumoLargura {
   percentual: number;
 }
 
+export interface ResumoEspessura {
+  espessura: number;
+  totalMl: number;
+  totalM2: number;
+  totalM3: number;
+  totalPecas: number;
+  percentual: number;
+}
+
 export interface ResumoConsolidadoGeral {
   porEspecie: ResumoEspecie[];
   porBitola: ResumoBitola[];
   porBitolaComprimento: ResumoBitolaComprimento[];
   porLargura: ResumoLargura[];
+  porEspessura: ResumoEspessura[];
   totalMadeiraLongaM3: number;
   totalShortM3: number;
   totalAbaixo6M3: number;
@@ -336,6 +346,7 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
   const resumoBitolaMap: { [key: string]: { especie: string; espessura: number; largura: number; totalMl: number; totalM2: number; totalM3: number; totalPecas: number } } = {};
   const resumoBitolaComprimentoMap: { [key: string]: { especie: string; espessura: number; largura: number; comprimento: number; totalMl: number; totalM2: number; totalM3: number; totalPecas: number } } = {};
   const resumoLarguraMap: { [key: string]: { especie: string; largura: number; totalMl: number; totalM2: number; totalM3: number; totalPecas: number } } = {};
+  const resumoEspessuraMap: { [key: number]: { espessura: number; totalMl: number; totalM2: number; totalM3: number; totalPecas: number } } = {};
 
   let totalMadeiraLongaM3 = 0;
   let totalShortM3 = 0;
@@ -416,6 +427,14 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
           resumoLarguraMap[larguraKey].totalM2 += m2;
           resumoLarguraMap[larguraKey].totalM3 += m3;
           resumoLarguraMap[larguraKey].totalPecas += 1;
+
+          if (!resumoEspessuraMap[e]) {
+            resumoEspessuraMap[e] = { espessura: e, totalMl: 0, totalM2: 0, totalM3: 0, totalPecas: 0 };
+          }
+          resumoEspessuraMap[e].totalMl += ml;
+          resumoEspessuraMap[e].totalM2 += m2;
+          resumoEspessuraMap[e].totalM3 += m3;
+          resumoEspessuraMap[e].totalPecas += 1;
         });
       } else {
         const l = Number(lVal) || 0;
@@ -471,6 +490,14 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
         resumoLarguraMap[larguraKey].totalM2 += m2;
         resumoLarguraMap[larguraKey].totalM3 += m3;
         resumoLarguraMap[larguraKey].totalPecas += q;
+
+        if (!resumoEspessuraMap[e]) {
+          resumoEspessuraMap[e] = { espessura: e, totalMl: 0, totalM2: 0, totalM3: 0, totalPecas: 0 };
+        }
+        resumoEspessuraMap[e].totalMl += ml;
+        resumoEspessuraMap[e].totalM2 += m2;
+        resumoEspessuraMap[e].totalM3 += m3;
+        resumoEspessuraMap[e].totalPecas += q;
       }
     });
   });
@@ -515,11 +542,19 @@ export function calcularResumosConsolidados(pacotes: any[], tipoRomaneio?: strin
       percentual: totalVolumeGeral > 0 ? (x.totalM3 / totalVolumeGeral) * 100 : 0
     }));
 
+  const porEspessura: ResumoEspessura[] = Object.values(resumoEspessuraMap)
+    .sort((a, b) => a.espessura - b.espessura)
+    .map(x => ({
+      ...x,
+      percentual: totalVolumeGeral > 0 ? (x.totalM3 / totalVolumeGeral) * 100 : 0
+    }));
+
   return {
     porEspecie,
     porBitola,
     porBitolaComprimento,
     porLargura,
+    porEspessura,
     totalMadeiraLongaM3,
     totalShortM3,
     totalAbaixo6M3,

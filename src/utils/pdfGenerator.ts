@@ -355,6 +355,51 @@ export const gerarPdfRomaneio = (romaneio: any, pacotes: any[]) => {
     margin: [0, 0, 0, 20]
   });
 
+  if (resumos.porEspessura && resumos.porEspessura.length > 1) {
+    const headerEspessura = [
+      { text: 'Espessura', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
+    ];
+    if (exibirMetragensExtras) {
+      headerEspessura.push({ text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+      headerEspessura.push({ text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    }
+    headerEspessura.push({ text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    headerEspessura.push({ text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+
+    const bodyEspessura: Record<string, unknown>[][] = [ headerEspessura ];
+
+    resumos.porEspessura.forEach(item => {
+      const row = [
+        { text: `Espessura ${formatarDimensao(item.espessura)} cm`, bold: true, alignment: 'left' }
+      ];
+      if (exibirMetragensExtras) {
+        row.push({ text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' } as any);
+        row.push({ text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' } as any);
+      }
+      row.push({ text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' } as any);
+      row.push({ text: `${item.percentual.toFixed(1)}%`, alignment: 'center' } as any);
+      bodyEspessura.push(row);
+    });
+
+    content.push({
+      text: 'Consolidado por Espessura',
+      fontSize: 12,
+      bold: true,
+      color: '#374151',
+      margin: [0, 10, 0, 5]
+    });
+
+    content.push({
+      table: {
+        headerRows: 1,
+        widths: exibirMetragensExtras ? ['*', 'auto', 'auto', 'auto', 'auto'] : ['*', 'auto', 'auto'],
+        body: bodyEspessura
+      },
+      layout: 'lightHorizontalLines',
+      margin: [0, 0, 0, 20]
+    });
+  }
+
   const percentLonga = resumos.totalVolumeGeral > 0 ? (resumos.totalMadeiraLongaM3 / resumos.totalVolumeGeral) * 100 : 0;
   const percentShort = resumos.totalVolumeGeral > 0 ? (resumos.totalShortM3 / resumos.totalVolumeGeral) * 100 : 0;
   const percentAbaixo6 = resumos.totalVolumeGeral > 0 ? (resumos.totalAbaixo6M3 / resumos.totalVolumeGeral) * 100 : 0;
@@ -633,8 +678,10 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
     bodyEspecie.push(row);
   });
 
+  let itemNum = 1;
+
   content.push({
-    text: '1. Consolidado por Espécie',
+    text: `${itemNum++}. Consolidado por Espécie`,
     fontSize: 11,
     bold: true,
     color: '#1f2937',
@@ -650,6 +697,54 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
     layout: 'lightHorizontalLines',
     margin: [0, 0, 0, 14]
   });
+
+  // Tabela por Espessura (quando houver mais de uma espessura)
+  if (resumos.porEspessura && resumos.porEspessura.length > 1) {
+    const headerEspessura = [
+      { text: 'Espessura', bold: true, fillColor: '#f3f4f6', alignment: 'center' },
+      { text: 'Peças', bold: true, fillColor: '#f3f4f6', alignment: 'center' }
+    ];
+    if (exibirMetragensExtras) {
+      headerEspessura.push({ text: 'Total ML', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+      headerEspessura.push({ text: 'Total M²', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    }
+    headerEspessura.push({ text: 'Total M³', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+    headerEspessura.push({ text: '% Vol', bold: true, fillColor: '#f3f4f6', alignment: 'center' });
+
+    const bodyEspessura: Record<string, unknown>[][] = [ headerEspessura ];
+
+    resumos.porEspessura.forEach(item => {
+      const row = [
+        { text: `Espessura ${formatarDimensao(item.espessura)} cm`, bold: true, alignment: 'left' },
+        { text: item.totalPecas.toString(), alignment: 'center' }
+      ];
+      if (exibirMetragensExtras) {
+        row.push({ text: item.totalMl.toFixed(2).replace('.', ','), alignment: 'center' } as any);
+        row.push({ text: (item.totalM2 || 0).toFixed(2).replace('.', ','), alignment: 'center' } as any);
+      }
+      row.push({ text: item.totalM3.toFixed(3).replace('.', ','), bold: true, alignment: 'center', color: '#047857', fillColor: '#ecfdf5' } as any);
+      row.push({ text: `${item.percentual.toFixed(1)}%`, alignment: 'center', bold: true } as any);
+      bodyEspessura.push(row);
+    });
+
+    content.push({
+      text: `${itemNum++}. Consolidado por Espessura`,
+      fontSize: 11,
+      bold: true,
+      color: '#1f2937',
+      margin: [0, 5, 0, 4]
+    });
+
+    content.push({
+      table: {
+        headerRows: 1,
+        widths: exibirMetragensExtras ? ['*', 'auto', 'auto', 'auto', 'auto', 'auto'] : ['*', 'auto', 'auto', 'auto'],
+        body: bodyEspessura
+      },
+      layout: 'lightHorizontalLines',
+      margin: [0, 0, 0, 14]
+    });
+  }
 
   // Tabela por Categoria de Comprimento
   const percentLonga = resumos.totalVolumeGeral > 0 ? (resumos.totalMadeiraLongaM3 / resumos.totalVolumeGeral) * 100 : 0;
@@ -700,7 +795,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
   }
 
   content.push({
-    text: '2. Consolidado por Categoria de Comprimento',
+    text: `${itemNum++}. Consolidado por Categoria de Comprimento`,
     fontSize: 11,
     bold: true,
     color: '#1f2937',
@@ -749,7 +844,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
     });
 
     content.push({
-      text: '3. Consolidado por Bitola (Seção)',
+      text: `${itemNum++}. Consolidado por Bitola (Seção)`,
       fontSize: 11,
       bold: true,
       color: '#1f2937',
@@ -794,7 +889,7 @@ export const gerarPdfResumoConsolidado = (romaneio: any, pacotes: any[]) => {
     });
 
     content.push({
-      text: '3. Consolidado por Largura',
+      text: `${itemNum++}. Consolidado por Largura`,
       fontSize: 11,
       bold: true,
       color: '#1f2937',

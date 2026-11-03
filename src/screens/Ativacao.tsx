@@ -79,14 +79,14 @@ const Ativacao: React.FC<AtivacaoProps> = ({ onActivated, motivo }) => {
       return {
         icon: <Clock className="w-5 h-5 text-amber-600 dark:text-amber-450 shrink-0" />,
         bg: 'bg-amber-50/80 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40',
-        text: 'Seu período de teste de 7 dias ou sua licença de uso expirou. Para ativar ou renovar, envie o ID de hardware abaixo para o suporte.'
+        text: 'O período de uso ou avaliação da sua licença expirou. Insira uma nova chave de ativação para renovar o acesso.'
       };
     }
     if (motivo === 'fraud') {
       return {
         icon: <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 animate-pulse" />,
         bg: 'bg-red-50/80 dark:bg-red-955/20 border-red-200/50 dark:border-red-900/30',
-        text: 'Fraude de relógio detectada. O relógio do sistema parece ter sido retrocedido. Corrija o horário do computador para reativar o sistema.'
+        text: 'Inconsistência de data detectada no relógio do sistema. Por favor, ajuste a data e hora do computador para continuar.'
       };
     }
     return null;
@@ -116,7 +116,7 @@ const Ativacao: React.FC<AtivacaoProps> = ({ onActivated, motivo }) => {
           <h1 className="text-3xl font-black text-slate-800 dark:text-slate-100 mb-2 tracking-tight">Ativação de Licença</h1>
           <p className="text-slate-500 dark:text-slate-400 mb-8 text-center text-sm font-medium leading-relaxed">
             {motivo === 'expired' 
-              ? 'Seu período de teste de 7 dias foi finalizado. Digite a chave de ativação para continuar.' 
+              ? 'Sua licença de uso expirou. Digite a nova chave de ativação para continuar.' 
               : 'Uma licença válida é necessária para liberar o acesso a este computador.'}
           </p>
 

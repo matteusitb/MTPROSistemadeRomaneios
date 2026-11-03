@@ -10,6 +10,7 @@ interface ModalAtivacaoProps {
   onActivated: () => void;
   diasRestantes?: number;
   validade?: string;
+  isTrial?: boolean;
 }
 
 export const ModalAtivacao: React.FC<ModalAtivacaoProps> = ({
@@ -17,7 +18,8 @@ export const ModalAtivacao: React.FC<ModalAtivacaoProps> = ({
   onClose,
   onActivated,
   diasRestantes = 7,
-  validade
+  validade,
+  isTrial = true
 }) => {
   const [hardwareId, setHardwareId] = useState('');
   const [chave, setChave] = useState('');
@@ -122,15 +124,19 @@ export const ModalAtivacao: React.FC<ModalAtivacaoProps> = ({
 
           <div className="flex flex-col items-center text-center">
             {/* Ícone de Licença */}
-            <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/20 mb-4 text-white">
-              <Zap size={32} strokeWidth={2.5} />
+            <div className={`w-16 h-16 bg-gradient-to-br ${isTrial ? 'from-amber-400 to-amber-600 shadow-amber-500/20' : 'from-emerald-500 to-teal-600 shadow-emerald-500/20'} rounded-2xl flex items-center justify-center shadow-lg mb-4 text-white`}>
+              {isTrial ? <Zap size={32} strokeWidth={2.5} /> : <ShieldCheck size={32} strokeWidth={2.5} />}
             </div>
 
             <h3 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">
-              Modo Demonstração (Trial)
+              {isTrial ? 'Modo Demonstração (Trial)' : 'Gerenciamento de Licença'}
             </h3>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium mt-1 mb-6">
-              Você possui <strong className="text-amber-600 dark:text-amber-400 font-bold">{diasRestantes} dia{diasRestantes === 1 ? '' : 's'} restante{diasRestantes === 1 ? '' : 's'}</strong> de avaliação gratuita com acesso a todos os recursos{validade ? ` (válido até ${validade})` : ''}.
+              {isTrial ? (
+                <>Você possui <strong className="text-amber-600 dark:text-amber-400 font-bold">{diasRestantes} dia{diasRestantes === 1 ? '' : 's'} restante{diasRestantes === 1 ? '' : 's'}</strong> de avaliação gratuita com acesso a todos os recursos{validade ? ` (válido até ${validade})` : ''}.</>
+              ) : (
+                <>Sua licença está ativa e válida{validade ? ` até ${validade}` : ''}. Insira uma nova chave de ativação para renovar ou alterar seu plano.</>
+              )}
             </p>
 
             <form onSubmit={handleAtivar} className="w-full space-y-4 text-left">
@@ -142,7 +148,7 @@ export const ModalAtivacao: React.FC<ModalAtivacaoProps> = ({
 
               <div className="space-y-1">
                 <label className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest ml-1">
-                  Chave de Licença Definitiva
+                  {isTrial ? 'Chave de Licença Definitiva' : 'Nova Chave de Licença'}
                 </label>
                 <input
                   type="text"
@@ -162,7 +168,7 @@ export const ModalAtivacao: React.FC<ModalAtivacaoProps> = ({
                 {ativando ? (
                   <><RefreshCw size={16} className="animate-spin" /> <span>Validando Chave...</span></>
                 ) : (
-                  <><ShieldCheck size={18} /> <span>Ativar Licença Completa</span></>
+                  <><ShieldCheck size={18} /> <span>{isTrial ? 'Ativar Licença Completa' : 'Atualizar / Renovar Licença'}</span></>
                 )}
               </button>
             </form>

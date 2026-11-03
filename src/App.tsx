@@ -10,7 +10,7 @@ import Login from './screens/Login';
 import Ativacao from './screens/Ativacao';
 import { ModalAtivacao } from './components/ModalAtivacao';
 import { useAuthStore } from './store/useAuthStore';
-import { Menu, User, Loader2, Zap, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Menu, User, Loader2, Zap, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
 import Swal from 'sweetalert2';
 
 interface ErrorBoundaryProps {
@@ -131,7 +131,7 @@ function MainLayout({ activationInfo, onRecheckActivation }: MainLayoutProps) {
 
           {/* Área Direita do Header (Informações de Perfil / Status / Trial) */}
           <div className="header-right">
-            {activationInfo.isTrial && (
+            {activationInfo.isTrial ? (
               <button
                 type="button"
                 onClick={() => setModalAtivacaoAberto(true)}
@@ -141,6 +141,16 @@ function MainLayout({ activationInfo, onRecheckActivation }: MainLayoutProps) {
                 <Zap size={14} className="animate-pulse text-amber-500" />
                 <span>Trial: {activationInfo.diasRestantes ?? 7} dia{(activationInfo.diasRestantes ?? 7) === 1 ? '' : 's'}</span>
                 <span className="bg-amber-500 text-slate-900 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase ml-0.5">Ativar</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setModalAtivacaoAberto(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-xs font-black transition-all cursor-pointer shadow-xs hover:scale-105"
+                title={`Sistema Ativado. Válido até ${activationInfo.validade || 'indeterminado'}. Clique para gerenciar ou renovar chave.`}
+              >
+                <ShieldCheck size={14} className="text-emerald-500" />
+                <span>Ativo{activationInfo.validade ? ` (${activationInfo.validade})` : ''}</span>
               </button>
             )}
 
@@ -173,6 +183,7 @@ function MainLayout({ activationInfo, onRecheckActivation }: MainLayoutProps) {
         }}
         diasRestantes={activationInfo.diasRestantes}
         validade={activationInfo.validade}
+        isTrial={activationInfo.isTrial}
       />
     </div>
   );

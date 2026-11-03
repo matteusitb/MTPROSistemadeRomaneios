@@ -17,6 +17,7 @@ let motivoBloqueio = 'unactivated';
 let isTrial = false;
 let trialDiasRestantes = 0;
 let licencaValidade = '';
+let cachedHardwareId = null;
 
 const _s = [77, 65, 68, 69, 73, 82, 65, 50, 48, 50, 54]; // MADEIRA2026
 const MEU_SEGREDO = process.env.APP_SECRET || String.fromCharCode(..._s);
@@ -67,11 +68,38 @@ function getShadowFilePath() {
   };
 }
 
+// ─── CAMADA 1: REGISTRO DO WINDOWS (HKCU) ───────────────────────────────────
+
 function readRegistryTrial() {
   if (process.platform !== 'win32') return null;
   try {
-    const out = execSync('reg query "HKCU\\Software\\MTPRO\\Licensing" /v "TrialVault" 2>nul', { encoding: 'utf8' });
+    const out = execSync('reg query "HKCU\\Software\\MTPRO\\Licensing" /v "TrialVault" 2>nul', { encoding: 'utf8', timeout: 3000 });
     const match = out.match(/TrialVault\s+REG_SZ\s+([a-f0-9]+)/i);
+    if (match && match[1]) {
+      const dec = descriptografar(match[1]);
+      if (dec) return JSON.parse(dec);
+    }
+  } catch (e) {
+    // Chave não existe ou erro de leitura
+  }
+  return null;
+}
+
+function writeRegistryTrial(dataObj) {
+  if (process.platform !== 'win32') return;
+  try {
+    const enc = criptografar(JSON.stringify(dataObj));
+    execSync(`reg add "HKCU\\Software\\MTPRO\\Licensing" /v "TrialVault" /t REG_SZ /d "${enc}" /f 2>nul`, { stdio: 'ignore', timeout: 3000 });
+  } catch (e) {
+    // Ignora
+  }
+}
+
+function readRegistryLicense() {
+  if (process.platform !== 'win32') return null;
+  try {
+    const out = execSync('reg query "HKCU\\Software\\MTPRO\\Licensing" /v "LicenseVault" 2>nul', { encoding: 'utf8', timeout: 3000 });
+    const match = out.match(/LicenseVault\s+REG_SZ\s+([a-f0-9]+)/i);
     if (match && match[1]) {
       const dec = descriptografar(match[1]);
       if (dec) return JSON.parse(dec);
@@ -82,17 +110,19 @@ function readRegistryTrial() {
   return null;
 }
 
-function writeRegistryTrial(dataObj) {
+function writeRegistryLicense(dataObj) {
   if (process.platform !== 'win32') return;
   try {
     const enc = criptografar(JSON.stringify(dataObj));
-    execSync(`reg add "HKCU\\Software\\MTPRO\\Licensing" /v "TrialVault" /t REG_SZ /d "${enc}" /f 2>nul`, { stdio: 'ignore' });
+    execSync(`reg add "HKCU\\Software\\MTPRO\\Licensing" /v "LicenseVault" /t REG_SZ /d "${enc}" /f 2>nul`, { stdio: 'ignore', timeout: 3000 });
   } catch (e) {
     // Ignora
   }
 }
 
-function readShadowTrial() {
+// ─── CAMADA 2: ARQUIVO OCULTO DE SEGURANÇA (SHADOW FILE) ────────────────────
+
+function readShadowBlob() {
   try {
     const { file } = getShadowFilePath();
     if (fs.existsSync(file)) {
@@ -106,7 +136,7 @@ function readShadowTrial() {
   return null;
 }
 
-function writeShadowTrial(dataObj) {
+function writeShadowBlob(dataObj) {
   try {
     const { dir, file } = getShadowFilePath();
     if (!fs.existsSync(dir)) {
@@ -118,6 +148,28 @@ function writeShadowTrial(dataObj) {
     // Ignora
   }
 }
+
+function readShadowTrial() {
+  const blob = readShadowBlob();
+  if (blob && blob.trial) return blob;
+  return null;
+}
+
+function writeShadowTrial(dataObj) {
+  writeShadowBlob(dataObj);
+}
+
+function readShadowLicense() {
+  const blob = readShadowBlob();
+  if (blob && (blob.type === 'paid_license' || blob.token)) return blob;
+  return null;
+}
+
+function writeShadowLicense(dataObj) {
+  writeShadowBlob(dataObj);
+}
+
+// ─── CAMADA 3: METADADOS SQLITE ─────────────────────────────────────────────
 
 function readSQLiteTrial() {
   if (!db) return null;
@@ -149,10 +201,92 @@ function writeSQLiteTrial(dataObj) {
   }
 }
 
+function readSQLiteLicense() {
+  if (!db) return null;
+  try {
+    const stmt = db.prepare("SELECT valor FROM system_metadata WHERE chave = 'license_vault'");
+    if (stmt.step()) {
+      const enc = stmt.getAsObject().valor;
+      stmt.free();
+      const dec = descriptografar(enc);
+      if (dec) return JSON.parse(dec);
+    }
+    stmt.free();
+  } catch (e) {
+    // Ignora
+  }
+  return null;
+}
+
+function writeSQLiteLicense(dataObj) {
+  if (!db) return;
+  try {
+    const enc = criptografar(JSON.stringify(dataObj));
+    db.run(
+      "INSERT OR REPLACE INTO system_metadata (chave, valor, criado_em) VALUES ('license_vault', ?, ?)",
+      [enc, new Date().toISOString()]
+    );
+  } catch (e) {
+    // Ignora
+  }
+}
+
+// ─── GERENCIAMENTO UNIFICADO DAS CAMADAS ────────────────────────────────────
+
 function persistirTrialEmTodasCamadas(trialData) {
   writeRegistryTrial(trialData);
   writeShadowTrial(trialData);
   writeSQLiteTrial(trialData);
+}
+
+function persistirLicencaDefinitiva(tokenStr) {
+  const licenseVaultData = {
+    type: 'paid_license',
+    token: tokenStr,
+    mid: getHardwareId(),
+    activated_at: new Date().toISOString(),
+    last_seen: new Date().toISOString()
+  };
+
+  // 1. Grava a licença definitiva em todas as 3 camadas auxiliares
+  writeRegistryLicense(licenseVaultData);
+  writeShadowLicense(licenseVaultData);
+  writeSQLiteLicense(licenseVaultData);
+
+  // 2. DESATIVA definitivamente o Trial prévio em todas as camadas para que a máquina
+  // NUNCA mais volte a ser bloqueada como trial expirado
+  const trialDesativado = {
+    trial: false,
+    upgraded: true,
+    mid: getHardwareId(),
+    upgraded_at: new Date().toISOString()
+  };
+  writeRegistryTrial(trialDesativado);
+  writeSQLiteTrial(trialDesativado);
+}
+
+function buscarLicencaDefinitivaEmCofres() {
+  const machineId = getHardwareId();
+
+  // 1. Tenta Registry
+  const fromReg = readRegistryLicense();
+  if (fromReg && fromReg.token && fromReg.mid === machineId) {
+    return fromReg;
+  }
+
+  // 2. Tenta Shadow File
+  const fromShadow = readShadowLicense();
+  if (fromShadow && fromShadow.token && fromShadow.mid === machineId) {
+    return fromShadow;
+  }
+
+  // 3. Tenta SQLite
+  const fromSqlite = readSQLiteLicense();
+  if (fromSqlite && fromSqlite.token && fromSqlite.mid === machineId) {
+    return fromSqlite;
+  }
+
+  return null;
 }
 
 function buscarHistoricoTrialExistente() {
@@ -160,194 +294,245 @@ function buscarHistoricoTrialExistente() {
 
   // 1. Tenta Registry do Windows
   const fromReg = readRegistryTrial();
-  if (fromReg && fromReg.trial && fromReg.mid === machineId && fromReg.trial_start && fromReg.trial_exp) {
-    return fromReg;
+  if (fromReg && fromReg.mid === machineId) {
+    if (fromReg.upgraded || fromReg.trial === false) {
+      return { upgraded: true, mid: machineId };
+    }
+    if (fromReg.trial && fromReg.trial_start && fromReg.trial_exp) {
+      return fromReg;
+    }
   }
 
   // 2. Tenta Shadow File
   const fromShadow = readShadowTrial();
-  if (fromShadow && fromShadow.trial && fromShadow.mid === machineId && fromShadow.trial_start && fromShadow.trial_exp) {
-    return fromShadow;
+  if (fromShadow && fromShadow.mid === machineId) {
+    if (fromShadow.upgraded || fromShadow.trial === false) {
+      return { upgraded: true, mid: machineId };
+    }
+    if (fromShadow.trial && fromShadow.trial_start && fromShadow.trial_exp) {
+      return fromShadow;
+    }
   }
 
   // 3. Tenta SQLite metadata
   const fromSqlite = readSQLiteTrial();
-  if (fromSqlite && fromSqlite.trial && fromSqlite.mid === machineId && fromSqlite.trial_start && fromSqlite.trial_exp) {
-    return fromSqlite;
+  if (fromSqlite && fromSqlite.mid === machineId) {
+    if (fromSqlite.upgraded || fromSqlite.trial === false) {
+      return { upgraded: true, mid: machineId };
+    }
+    if (fromSqlite.trial && fromSqlite.trial_start && fromSqlite.trial_exp) {
+      return fromSqlite;
+    }
   }
 
   return null;
 }
+
+// ─── VALIDADOR CRIPTOGRÁFICO DE TOKEN RSA ────────────────────────────────────
+
+function validarTokenRSA(tokenStr, lastSeenStr) {
+  let licencaPacote;
+  try {
+    const jsonString = Buffer.from(tokenStr, 'base64').toString('utf8');
+    licencaPacote = JSON.parse(jsonString);
+  } catch (e) {
+    console.error("Erro ao decodificar token RSA:", e.message);
+    return { valido: false, motivo: 'unactivated' };
+  }
+
+  if (!licencaPacote || !licencaPacote.data || !licencaPacote.signature) {
+    console.error("Token RSA incompleto ou corrompido.");
+    return { valido: false, motivo: 'unactivated' };
+  }
+
+  const { data, signature } = licencaPacote;
+
+  // Valida assinatura RSA com chave pública oficial embutida
+  const dadosString = JSON.stringify(data);
+  const verifier = crypto.createVerify('SHA256');
+  verifier.update(dadosString);
+  const assinaturaValida = verifier.verify(CHAVE_PUBLICA_RSA, signature, 'base64');
+
+  if (!assinaturaValida) {
+    console.error("🚨 CRÍTICO: Assinatura digital da licença é inválida!");
+    return { valido: false, motivo: 'unactivated' };
+  }
+
+  // Valida o Hardware ID
+  const machineId = getHardwareId();
+  if (data.mid !== machineId) {
+    console.error("Máquina não autorizada para esta licença.");
+    return { valido: false, motivo: 'unactivated' };
+  }
+
+  const agora = new Date();
+  const exp = new Date(data.exp);
+  const lastSeen = lastSeenStr ? new Date(lastSeenStr) : agora;
+
+  // Anti-Fraude: Relógio retrocedido em mais de 24 horas
+  if (lastSeen.getTime() - agora.getTime() > 24 * 60 * 60 * 1000) {
+    console.error("🚨 DETECÇÃO DE FRAUDE: Relógio do computador retrocedido!");
+    return { valido: false, motivo: 'fraud' };
+  }
+
+  // Verifica Expiração da licença completa
+  if (agora > exp) {
+    console.error(`Licença expirou em: ${data.exp}`);
+    return {
+      valido: false,
+      motivo: 'expired',
+      expiraEm: exp.toLocaleDateString('pt-BR'),
+      isTrial: false
+    };
+  }
+
+  return {
+    valido: true,
+    data,
+    expiraEm: exp.toLocaleDateString('pt-BR')
+  };
+}
+
+// ─── VERIFICAÇÃO PRINCIPAL DE LICENÇA (LOCAL + MULTICAMADAS) ─────────────────
 
 async function verificarLicencaLocal() {
   const appData = app.getPath('userData');
   const pastaBase = path.join(appData, 'romaneio-madeira');
   const arquivoLicenca = path.join(pastaBase, 'license.dat');
 
+  // CASO A: Tenta carregar do arquivo principal license.dat
   if (fs.existsSync(arquivoLicenca)) {
     try {
       const conteudoCriptografado = fs.readFileSync(arquivoLicenca, 'utf-8');
       const conteudoJson = descriptografar(conteudoCriptografado);
 
-      if (!conteudoJson) {
-        sistemaAtivado = false;
-        motivoBloqueio = 'unactivated';
-        return false;
-      }
+      if (conteudoJson) {
+        const licencaLocal = JSON.parse(conteudoJson);
 
-      const licencaLocal = JSON.parse(conteudoJson);
+        // 1. Licença Completa Paga (Token RSA)
+        if (licencaLocal && licencaLocal.token) {
+          const resultado = validarTokenRSA(licencaLocal.token, licencaLocal.last_seen);
+          if (resultado.valido) {
+            const agora = new Date();
+            licencaLocal.last_seen = agora.toISOString();
+            fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(licencaLocal)));
+            persistirLicencaDefinitiva(licencaLocal.token);
 
-      // CASO 1: Licença Completa Paga (Token RSA)
-      if (licencaLocal && licencaLocal.token && licencaLocal.last_seen) {
-        let licencaPacote;
-        try {
-          const jsonString = Buffer.from(licencaLocal.token, 'base64').toString('utf8');
-          licencaPacote = JSON.parse(jsonString);
-        } catch (e) {
-          console.error("Erro ao decodificar token RSA salvo localmente.");
-          sistemaAtivado = false;
-          motivoBloqueio = 'unactivated';
-          return false;
+            sistemaAtivado = true;
+            motivoBloqueio = 'ok';
+            isTrial = false;
+            trialDiasRestantes = 0;
+            licencaValidade = resultado.expiraEm;
+            return true;
+          } else {
+            sistemaAtivado = false;
+            motivoBloqueio = resultado.motivo;
+            isTrial = false;
+            trialDiasRestantes = 0;
+            licencaValidade = resultado.expiraEm || '';
+            return false;
+          }
         }
 
-        if (!licencaPacote || !licencaPacote.data || !licencaPacote.signature) {
-          console.error("Token de licença salvo localmente está incompleto ou corrompido.");
-          sistemaAtivado = false;
-          motivoBloqueio = 'unactivated';
-          return false;
-        }
+        // 2. Modo Trial de 7 Dias
+        if (licencaLocal && licencaLocal.trial) {
+          const machineId = getHardwareId();
+          if (licencaLocal.mid !== machineId) {
+            console.error("Licença trial não pertence a esta máquina.");
+            sistemaAtivado = false;
+            motivoBloqueio = 'unactivated';
+            return false;
+          }
 
-        const { data, signature } = licencaPacote;
+          const agora = new Date();
+          const trialExp = new Date(licencaLocal.trial_exp);
+          const lastSeen = new Date(licencaLocal.last_seen || agora);
 
-        // Valida assinatura RSA
-        const dadosString = JSON.stringify(data);
-        const verifier = crypto.createVerify('SHA256');
-        verifier.update(dadosString);
-        const assinaturaValida = verifier.verify(CHAVE_PUBLICA_RSA, signature, 'base64');
+          if (lastSeen.getTime() - agora.getTime() > 24 * 60 * 60 * 1000) {
+            console.error("🚨 DETECÇÃO DE FRAUDE NO TRIAL: Relógio retrocedido!");
+            sistemaAtivado = false;
+            motivoBloqueio = 'fraud';
+            return false;
+          }
 
-        if (!assinaturaValida) {
-          console.error("🚨 CRÍTICO: Assinatura digital da licença local é inválida! Adulteração detectada.");
-          sistemaAtivado = false;
-          motivoBloqueio = 'unactivated';
-          return false;
-        }
+          if (agora > trialExp) {
+            console.warn("Período de avaliação de 7 dias expirado.");
+            sistemaAtivado = false;
+            motivoBloqueio = 'expired';
+            isTrial = true;
+            trialDiasRestantes = 0;
+            licencaValidade = trialExp.toLocaleDateString('pt-BR');
+            return false;
+          }
 
-        // Valida o Hardware ID
-        const machineId = getHardwareId();
-        if (data.mid !== machineId) {
-          console.error("Máquina não autorizada para esta licença.");
-          sistemaAtivado = false;
-          motivoBloqueio = 'unactivated';
-          return false;
-        }
-
-        const agora = new Date();
-        const exp = new Date(data.exp);
-        const lastSeen = new Date(licencaLocal.last_seen);
-
-        // Anti-Fraude: Relógio retrocedido em mais de 24 horas (tolerância para fusos horários/NTP)
-        if (lastSeen.getTime() - agora.getTime() > 24 * 60 * 60 * 1000) {
-          console.error("🚨 DETECÇÃO DE FRAUDE: Relógio do computador retrocedido!");
-          sistemaAtivado = false;
-          motivoBloqueio = 'fraud';
-          return false;
-        }
-
-        // Verifica Expiração da licença completa
-        if (agora > exp) {
-          console.error(`Licença expirou em: ${data.exp}`);
-          sistemaAtivado = false;
-          motivoBloqueio = 'expired';
-          isTrial = false;
-          trialDiasRestantes = 0;
-          licencaValidade = exp.toLocaleDateString('pt-BR');
-          return false;
-        }
-
-        // Atualiza last_seen localmente
-        licencaLocal.last_seen = agora.toISOString();
-        fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(licencaLocal)));
-
-        sistemaAtivado = true;
-        motivoBloqueio = 'ok';
-        isTrial = false;
-        trialDiasRestantes = 0;
-        licencaValidade = exp.toLocaleDateString('pt-BR');
-        return true;
-      }
-
-      // CASO 2: Modo Trial de 7 Dias
-      if (licencaLocal && licencaLocal.trial) {
-        const machineId = getHardwareId();
-        if (licencaLocal.mid !== machineId) {
-          console.error("Licença trial não pertence a esta máquina.");
-          sistemaAtivado = false;
-          motivoBloqueio = 'unactivated';
-          return false;
-        }
-
-        const agora = new Date();
-        const trialExp = new Date(licencaLocal.trial_exp);
-        const lastSeen = new Date(licencaLocal.last_seen);
-
-        // Anti-Fraude: Relógio retrocedido em mais de 24 horas (tolerância para fusos horários/NTP)
-        if (lastSeen.getTime() - agora.getTime() > 24 * 60 * 60 * 1000) {
-          console.error("🚨 DETECÇÃO DE FRAUDE NO TRIAL: Relógio do computador retrocedido!");
-          sistemaAtivado = false;
-          motivoBloqueio = 'fraud';
-          return false;
-        }
-
-        if (agora > trialExp) {
-          console.warn("Período de avaliação de 7 dias expirado.");
-          sistemaAtivado = false;
-          motivoBloqueio = 'expired';
+          const diffMs = trialExp.getTime() - agora.getTime();
+          trialDiasRestantes = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+          sistemaAtivado = true;
+          motivoBloqueio = 'ok';
           isTrial = true;
-          trialDiasRestantes = 0;
           licencaValidade = trialExp.toLocaleDateString('pt-BR');
-          return false;
+
+          licencaLocal.last_seen = agora.toISOString();
+          fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(licencaLocal)));
+          persistirTrialEmTodasCamadas(licencaLocal);
+          return true;
         }
-
-        const diffMs = trialExp.getTime() - agora.getTime();
-        trialDiasRestantes = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-        sistemaAtivado = true;
-        motivoBloqueio = 'ok';
-        isTrial = true;
-        licencaValidade = trialExp.toLocaleDateString('pt-BR');
-
-        // Atualiza last_seen em todas as camadas de segurança
-        licencaLocal.last_seen = agora.toISOString();
-        fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(licencaLocal)));
-        persistirTrialEmTodasCamadas(licencaLocal);
-        return true;
       }
-
     } catch (err) {
-      console.error("Erro ao verificar licença:", err.message);
-      sistemaAtivado = false;
-      motivoBloqueio = 'unactivated';
-      return false;
+      console.error("Erro ao verificar license.dat local:", err.message);
     }
   }
 
-  // CASO 3: license.dat não existe no caminho padrão
-  // Verificar se o computador já possui histórico de Trial gravado em outra camada (Registro, Shadow File, SQLite)
-  const historicoPrevio = buscarHistoricoTrialExistente();
+  // CASO B: license.dat ausente, apagado ou corrompido
+  // PRIMEIRO: Verificar se existe uma LICENÇA DEFINITIVA nos cofres (Registro, Shadow, SQLite)
+  const licencaCofre = buscarLicencaDefinitivaEmCofres();
+  if (licencaCofre && licencaCofre.token) {
+    const resCofre = validarTokenRSA(licencaCofre.token, licencaCofre.last_seen);
+    if (resCofre.valido) {
+      if (!fs.existsSync(pastaBase)) {
+        fs.mkdirSync(pastaBase, { recursive: true });
+      }
+      const agora = new Date();
+      const licencaRestaurada = {
+        token: licencaCofre.token,
+        last_seen: agora.toISOString()
+      };
+      fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(licencaRestaurada)));
+      persistirLicencaDefinitiva(licencaCofre.token);
 
+      sistemaAtivado = true;
+      motivoBloqueio = 'ok';
+      isTrial = false;
+      trialDiasRestantes = 0;
+      licencaValidade = resCofre.expiraEm;
+      console.log("⚡ Licença definitiva restaurada com sucesso a partir dos cofres persistentes!");
+      return true;
+    }
+  }
+
+  // SEGUNDO: Se NÃO possui licença definitiva, verificar histórico de Trial
+  const historicoPrevio = buscarHistoricoTrialExistente();
   if (historicoPrevio) {
+    // Se o computador já foi atualizado para definitivo no passado, não rebaixa para Trial
+    if (historicoPrevio.upgraded) {
+      sistemaAtivado = false;
+      motivoBloqueio = 'unactivated';
+      isTrial = false;
+      trialDiasRestantes = 0;
+      return false;
+    }
+
     const agora = new Date();
     const trialExp = new Date(historicoPrevio.trial_exp);
     const lastSeen = new Date(historicoPrevio.last_seen || historicoPrevio.trial_start);
 
-    // Anti-Fraude: Relógio retrocedido em mais de 24 horas (tolerância para fusos horários/NTP)
     if (lastSeen.getTime() - agora.getTime() > 24 * 60 * 60 * 1000) {
-      console.error("🚨 DETECÇÃO DE FRAUDE NO TRIAL: Relógio do computador retrocedido!");
+      console.error("🚨 DETECÇÃO DE FRAUDE NO TRIAL: Relógio retrocedido!");
       sistemaAtivado = false;
       motivoBloqueio = 'fraud';
       return false;
     }
 
-    // Restaura o arquivo license.dat com as datas ORIGINAIS
     if (!fs.existsSync(pastaBase)) {
       fs.mkdirSync(pastaBase, { recursive: true });
     }
@@ -356,7 +541,7 @@ async function verificarLicencaLocal() {
     persistirTrialEmTodasCamadas(historicoPrevio);
 
     if (agora > trialExp) {
-      console.warn("Tentativa de reset de trial detectada: O período de 7 dias original já expirou.");
+      console.warn("Tentativa de reset de trial: Período original de 7 dias já expirou.");
       sistemaAtivado = false;
       motivoBloqueio = 'expired';
       isTrial = true;
@@ -375,7 +560,7 @@ async function verificarLicencaLocal() {
     return true;
   }
 
-  // CASO 4: Primeira Execução real no computador (sem histórico prévio em nenhuma camada)
+  // TERCEIRO: Primeira Execução real no computador (sem histórico prévio em nenhuma camada)
   try {
     if (!fs.existsSync(pastaBase)) {
       fs.mkdirSync(pastaBase, { recursive: true });
@@ -391,7 +576,6 @@ async function verificarLicencaLocal() {
       last_seen: agora.toISOString()
     };
 
-    // Grava no license.dat e em todas as camadas de segurança
     fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(trialData)));
     persistirTrialEmTodasCamadas(trialData);
 
@@ -1716,15 +1900,17 @@ protectedHandle('open-external-url', async (event, url) => {
 // ─── IPC: GET HARDWARE ID ───────────────────────────────────────────────────
 
 function getHardwareId() {
+  if (cachedHardwareId) return cachedHardwareId;
+
   let systemUuid = '';
   
   if (process.platform === 'win32') {
     // 1. Tenta obter o MachineGuid diretamente do Registro do Windows (Mais rápido e confiável)
     try {
-      const output = execSync('reg query "HKLM\\Software\\Microsoft\\Cryptography" /v MachineGuid', { stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+      const output = execSync('reg query "HKLM\\Software\\Microsoft\\Cryptography" /v MachineGuid', { stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).toString();
       const match = output.match(/MachineGuid\s+REG_SZ\s+([a-fA-F0-9-]+)/i);
       if (match && match[1]) {
-        systemUuid = match[1].trim();
+        systemUuid = match[1].trim().toLowerCase();
       }
     } catch (e) {
       console.warn('Erro ao obter UUID via Registro:', e.message);
@@ -1733,9 +1919,10 @@ function getHardwareId() {
     // 2. Fallback: Tenta obter o UUID via PowerShell CIM (Moderno)
     if (!systemUuid) {
       try {
-        systemUuid = execSync('powershell -Command "(Get-CimInstance Win32_ComputerSystemProduct).UUID"', { stdio: ['ignore', 'pipe', 'ignore'] })
+        systemUuid = execSync('powershell -NoProfile -Command "(Get-CimInstance Win32_ComputerSystemProduct).UUID"', { stdio: ['ignore', 'pipe', 'ignore'], timeout: 4000 })
           .toString()
-          .trim();
+          .trim()
+          .toLowerCase();
       } catch (e) {
         console.warn('Erro ao obter UUID via PowerShell CIM:', e.message);
       }
@@ -1744,10 +1931,11 @@ function getHardwareId() {
     // 3. Segundo Fallback: Tenta via wmic csproduct (Legado, pode estar ausente em Windows 11 moderno)
     if (!systemUuid) {
       try {
-        systemUuid = execSync('wmic csproduct get uuid', { stdio: ['ignore', 'pipe', 'ignore'] })
+        systemUuid = execSync('wmic csproduct get uuid', { stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 })
           .toString()
-          .replace('UUID', '')
-          .trim();
+          .replace(/UUID/i, '')
+          .trim()
+          .toLowerCase();
       } catch (e) {
         console.warn('Erro ao obter UUID via wmic:', e.message);
       }
@@ -1766,18 +1954,19 @@ function getHardwareId() {
       for (const name of Object.keys(interfaces)) {
         for (const net of interfaces[name]) {
           if (net.mac && net.mac !== '00:00:00:00:00:00') {
-            macs.push(net.mac);
+            macs.push(net.mac.toLowerCase());
           }
         }
       }
       macs.sort();
-      systemUuid = macs.join('-') || os.hostname();
+      systemUuid = (macs.join('-') || os.hostname()).toLowerCase();
     } catch (e) {
-      systemUuid = os.hostname();
+      systemUuid = (os.hostname() || 'fallback-host-id').toLowerCase();
     }
   }
 
-  return crypto.createHash('sha256').update(systemUuid).digest('hex');
+  cachedHardwareId = crypto.createHash('sha256').update(systemUuid.trim().toLowerCase()).digest('hex');
+  return cachedHardwareId;
 }
 
 ipcMain.handle('get-hardware-id', () => {
@@ -1902,6 +2091,17 @@ ipcMain.handle('check-activation-status', () => {
   };
 });
 
+ipcMain.handle('get-license-details', () => {
+  return {
+    ativado: sistemaAtivado,
+    motivo: motivoBloqueio,
+    isTrial: isTrial,
+    diasRestantes: trialDiasRestantes,
+    validade: licencaValidade,
+    hardwareId: getHardwareId()
+  };
+});
+
 ipcMain.handle('ativar-sistema', async (event, chaveDigitada) => {
   try {
     const idHardware = getHardwareId();
@@ -1952,13 +2152,16 @@ ipcMain.handle('ativar-sistema', async (event, chaveDigitada) => {
       fs.mkdirSync(pastaLicenca, { recursive: true });
     }
 
-    // Grava o token original completo e a data last_seen para validação local completa posterior
+    // Grava o token original completo e a data last_seen no arquivo local
     const novaLicenca = {
       token: chaveDigitada,
       last_seen: agora.toISOString()
     };
-
     fs.writeFileSync(arquivoLicenca, criptografar(JSON.stringify(novaLicenca)));
+
+    // Grava também em todas as camadas de segurança (Registro, Shadow, SQLite)
+    // E DESATIVA o Trial permanentemente para impedir regressão ao teste expirado
+    persistirLicencaDefinitiva(chaveDigitada);
 
     sistemaAtivado = true;
     motivoBloqueio = 'ok';

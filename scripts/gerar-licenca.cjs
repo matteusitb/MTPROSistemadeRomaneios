@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const args = process.argv.slice(2);
-const idHardware = args[0];
+const idHardware = (args[0] || '').trim();
 const diasValidade = parseInt(args[1], 10) || 30; // 30 dias por padrão
 
 if (!idHardware) {

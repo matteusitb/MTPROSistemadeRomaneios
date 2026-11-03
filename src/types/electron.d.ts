@@ -169,6 +169,14 @@ export interface ElectronAPI {
     validade?: string;
     hardwareId?: string;
   }>;
+  getLicenseDetails: () => Promise<{
+    ativado: boolean;
+    motivo: 'unactivated' | 'expired' | 'fraud' | 'ok';
+    isTrial?: boolean;
+    diasRestantes?: number;
+    validade?: string;
+    hardwareId?: string;
+  }>;
   ativarSistema: (chave: string) => Promise<{ success: boolean; validade?: string; error?: string }>;
 
   // Compartilhamento & Arquivos (WhatsApp)
