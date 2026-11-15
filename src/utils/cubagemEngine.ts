@@ -593,8 +593,21 @@ export function validarToleranciaMedida(
       return { invalido: true, aviso: `Comprimento de ${c} m é incomum para tábuas e pranchas (geralmente <= 7,00 m).` };
     }
   }
-  if (!isNaN(l) && l > 80) {
-    return { invalido: true, aviso: `Largura de ${l} cm é muito ampla para madeira serrada.` };
+  if (tipoRomaneio === 'aberta') {
+    const lStr = String(largura ?? '').trim();
+    if (/[\s-]+/.test(lStr)) {
+      const partes = lStr.split(/\s*-\s*|\s+/).map(Number).filter(x => !isNaN(x) && x > 0);
+      const excedente = partes.find(p => p > 180);
+      if (excedente) {
+        return { invalido: true, aviso: `Largura de ${excedente} cm é muito ampla para madeira serrada (máx 180 cm).` };
+      }
+    } else if (!isNaN(l) && l > 180) {
+      return { invalido: true, aviso: `Largura de ${l} cm é muito ampla para madeira serrada (máx 180 cm).` };
+    }
+  } else {
+    if (!isNaN(l) && l > 180) {
+      return { invalido: true, aviso: `Largura de ${l} cm é muito ampla para madeira serrada (máx 180 cm).` };
+    }
   }
 
   return { invalido: false };

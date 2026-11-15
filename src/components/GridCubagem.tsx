@@ -133,7 +133,7 @@ const InputLargura = React.memo(
           onChange={handleChange}
           onBlur={handleBlur}
           onKeyDown={e => onKeyDown(e, item)}
-          placeholder={tipoRomaneio === 'aberta' ? 'Ex: 12 - 15 - 18' : 'Ex: 11'}
+          placeholder={tipoRomaneio === 'aberta' ? 'Ex: 45 - 85 - 160 - 180' : 'Ex: 11'}
         />
       );
     }
@@ -535,7 +535,7 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
         let val = p.trim().replace(',', '.');
         if (!val.includes('.')) {
           const num = Number(val);
-          if (!isNaN(num) && num > 99) {
+          if (!isNaN(num) && num > 180) {
             val = (num / 10).toString();
           }
         }
@@ -553,7 +553,7 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
     let cleanVal = valStr.replace(',', '.');
     if (!cleanVal.includes('.')) {
       const num = Number(cleanVal);
-      if (!isNaN(num) && num > 99) {
+      if (!isNaN(num) && num > 180) {
         cleanVal = (num / 10).toString();
       }
     }
