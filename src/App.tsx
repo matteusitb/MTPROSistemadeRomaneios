@@ -9,6 +9,8 @@ import Configuracoes from './screens/Configuracoes';
 import Login from './screens/Login';
 import Ativacao from './screens/Ativacao';
 import { ModalAtivacao } from './components/ModalAtivacao';
+import { ModalConexaoWhatsApp } from './components/ModalConexaoWhatsApp';
+import { WhatsAppIcon } from './components/ModalWhatsApp';
 import { useAuthStore } from './store/useAuthStore';
 import { Menu, User, Loader2, Zap, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
 import Swal from 'sweetalert2';
@@ -79,7 +81,31 @@ function MainLayout({ activationInfo, onRecheckActivation }: MainLayoutProps) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [modalAtivacaoAberto, setModalAtivacaoAberto] = useState(false);
+  const [modalWhatsAppAberto, setModalWhatsAppAberto] = useState(false);
+  const [waStatus, setWaStatus] = useState<'disconnected' | 'connecting' | 'qr_ready' | 'connected'>('disconnected');
+  const [waUser, setWaUser] = useState<{ id: string; phone: string; name?: string } | null>(null);
   const user = useAuthStore((state) => state.user);
+
+  useEffect(() => {
+    if (window.electronAPI?.whatsapp?.getStatus) {
+      window.electronAPI.whatsapp.getStatus().then(res => {
+        setWaStatus(res.status);
+        setWaUser(res.user);
+      }).catch(() => {});
+    }
+
+    let unsubscribe: (() => void) | undefined;
+    if (window.electronAPI?.whatsapp?.onStatusChange) {
+      unsubscribe = window.electronAPI.whatsapp.onStatusChange((data) => {
+        setWaStatus(data.status);
+        setWaUser(data.user);
+      });
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -131,6 +157,32 @@ function MainLayout({ activationInfo, onRecheckActivation }: MainLayoutProps) {
 
           {/* Área Direita do Header (Informações de Perfil / Status / Trial) */}
           <div className="header-right">
+            {/* Botão de WhatsApp no Header */}
+            <button
+              type="button"
+              onClick={() => setModalWhatsAppAberto(true)}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer shadow-xs hover:scale-105 border ${
+                waStatus === 'connected'
+                  ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
+                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-750'
+              }`}
+              title={
+                waStatus === 'connected'
+                  ? `WhatsApp Conectado (+${waUser?.phone || 'Aparelho'}). Clique para gerenciar conexão.`
+                  : 'WhatsApp Desconectado. Clique para escanear QR Code e conectar.'
+              }
+            >
+              <div className="relative flex items-center justify-center">
+                <WhatsAppIcon size={15} className={waStatus === 'connected' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'} />
+                {waStatus === 'connected' && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                )}
+              </div>
+              <span>
+                {waStatus === 'connected' ? 'WhatsApp Online' : 'Conectar WhatsApp'}
+              </span>
+            </button>
+
             {activationInfo.isTrial ? (
               <button
                 type="button"
@@ -185,6 +237,12 @@ function MainLayout({ activationInfo, onRecheckActivation }: MainLayoutProps) {
         validade={activationInfo.validade}
         isTrial={activationInfo.isTrial}
       />
+
+      {/* Modal de Conexão WhatsApp */}
+      <ModalConexaoWhatsApp
+        isOpen={modalWhatsAppAberto}
+        onClose={() => setModalWhatsAppAberto(false)}
+      />
     </div>
   );
 }
@@ -204,13 +262,15 @@ function App() {
   }>({ ativado: false, motivo: 'unactivated' });
   const [checkingActivation, setCheckingActivation] = useState(true);
 
-  // Aplica o tema salvo no localStorage
+  // Aplica o tema salvo no localStorage e sincroniza com o frame do Electron
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'dark') {
       document.body.classList.add('dark-mode');
+      window.electronAPI?.setTheme?.('dark');
     } else {
       document.body.classList.remove('dark-mode');
+      window.electronAPI?.setTheme?.('light');
     }
   }, []);
 

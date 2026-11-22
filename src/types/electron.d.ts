@@ -183,6 +183,35 @@ export interface ElectronAPI {
   saveTempPdf: (fileName: string, base64Data: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
   showItemInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>;
+  setTheme?: (theme: 'dark' | 'light' | 'system') => Promise<{ success: boolean; error?: string }>;
+
+  // WhatsApp Baileys Direto
+  whatsapp?: {
+    getStatus: () => Promise<{
+      status: 'disconnected' | 'connecting' | 'qr_ready' | 'connected';
+      user: { id: string; phone: string; name?: string } | null;
+      qr: string | null;
+    }>;
+    connect: () => Promise<{ success: boolean; status?: string; qr?: string; error?: string }>;
+    disconnect: () => Promise<{ success: boolean }>;
+    logout: () => Promise<{ success: boolean }>;
+    sendRomaneio: (data: {
+      telefone: string;
+      mensagem: string;
+      pdfBase64: string;
+      fileName?: string;
+    }) => Promise<{
+      success: boolean;
+      messageId?: string;
+      destinatario?: string;
+      error?: string;
+    }>;
+    onStatusChange: (callback: (data: {
+      status: 'disconnected' | 'connecting' | 'qr_ready' | 'connected';
+      user: { id: string; phone: string; name?: string } | null;
+      qr: string | null;
+    }) => void) => () => void;
+  };
 }
 
 declare global {

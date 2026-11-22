@@ -10,6 +10,8 @@ import Swal from 'sweetalert2';
 import { supabase } from '../utils/supabaseClient';
 import { useConfigStore } from '../store/useConfigStore';
 import { ModalAtivacao } from '../components/ModalAtivacao';
+import { WhatsAppIcon } from '../components/ModalWhatsApp';
+import { ModalConexaoWhatsApp } from '../components/ModalConexaoWhatsApp';
 
 interface DbInfo {
   path: string;
@@ -86,6 +88,38 @@ export default function Configuracoes() {
   } | null>(null);
   const [modalLicencaAberto, setModalLicencaAberto] = useState(false);
   const [copiadoHwId, setCopiadoHwId] = useState(false);
+
+  // Estados de Conexão WhatsApp Direto
+  const [modalWhatsAppAberto, setModalWhatsAppAberto] = useState(false);
+  const [whatsAppStatus, setWhatsAppStatus] = useState<'disconnected' | 'connecting' | 'qr_ready' | 'connected'>('disconnected');
+  const [whatsAppUser, setWhatsAppUser] = useState<{ id: string; phone: string; name?: string } | null>(null);
+
+  useEffect(() => {
+    const carregarStatusWhatsApp = async () => {
+      if (window.electronAPI?.whatsapp?.getStatus) {
+        try {
+          const res = await window.electronAPI.whatsapp.getStatus();
+          setWhatsAppStatus(res.status);
+          setWhatsAppUser(res.user);
+        } catch (e) {
+          console.warn('Erro ao carregar status whatsapp:', e);
+        }
+      }
+    };
+
+    let unsubscribeWA: (() => void) | undefined;
+    if (window.electronAPI?.whatsapp?.onStatusChange) {
+      unsubscribeWA = window.electronAPI.whatsapp.onStatusChange((data) => {
+        setWhatsAppStatus(data.status);
+        setWhatsAppUser(data.user);
+      });
+    }
+
+    carregarStatusWhatsApp();
+    return () => {
+      if (unsubscribeWA) unsubscribeWA();
+    };
+  }, []);
 
   const carregarLicenca = async () => {
     if (window.electronAPI && typeof window.electronAPI.checkActivationStatus === 'function') {
@@ -805,6 +839,58 @@ export default function Configuracoes() {
             </div>
           </motion.div>
 
+          {/* ── CONEXÃO WHATSAPP DIRETO (BAILEYS) ── */}
+          <motion.div variants={itemVariants} className="glass-card p-8 flex flex-col gap-6">
+            <div className="flex items-center gap-4">
+              <div className="bg-emerald-50 dark:bg-emerald-950/30 text-[#25D366] p-3.5 rounded-2xl">
+                <WhatsAppIcon size={26} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">WhatsApp Integrado</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-0.5">Envio direto de romaneios em PDF</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-950 rounded-2xl p-5 space-y-3 border border-slate-100 dark:border-slate-800 flex-1 flex flex-col justify-center">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500 dark:text-slate-400 font-semibold flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${whatsAppStatus === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                  Status da Conexão:
+                </span>
+                <span className={`font-black text-xs px-2.5 py-1 rounded-full ${
+                  whatsAppStatus === 'connected'
+                    ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                }`}>
+                  {whatsAppStatus === 'connected' ? 'Conectado' : whatsAppStatus === 'connecting' ? 'Conectando...' : 'Desconectado'}
+                </span>
+              </div>
+
+              {whatsAppStatus === 'connected' && whatsAppUser?.phone && (
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/50 dark:border-slate-800/60">
+                  <span className="text-slate-400 font-bold">Número Pareado:</span>
+                  <span className="font-bold font-mono text-slate-700 dark:text-slate-200">+{whatsAppUser.phone}</span>
+                </div>
+              )}
+
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium pt-1">
+                Ao conectar o WhatsApp comercial, o sistema envia o arquivo PDF do romaneio e as mensagens diretamente com um clique, sem abrir navegadores.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setModalWhatsAppAberto(true)}
+              className={`w-full px-6 py-4 rounded-2xl font-bold shadow-xl transition-all flex items-center justify-center gap-3 hover:-translate-y-0.5 cursor-pointer ${
+                whatsAppStatus === 'connected'
+                  ? 'bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white shadow-slate-900/10'
+                  : 'bg-[#25D366] hover:bg-[#20bd5a] text-white shadow-[#25D366]/20'
+              }`}
+            >
+              <WhatsAppIcon size={20} />
+              <span>{whatsAppStatus === 'connected' ? 'Gerenciar Aparelho Conectado' : 'Conectar WhatsApp (QR Code)'}</span>
+            </button>
+          </motion.div>
+
           {/* ── BACKUP AUTOMÁTICO ── */}
           <motion.div variants={itemVariants} className="glass-card p-8 flex flex-col gap-6">
             <div className="flex items-center justify-between gap-4">
@@ -1392,6 +1478,12 @@ export default function Configuracoes() {
         diasRestantes={licenseInfo?.diasRestantes}
         validade={licenseInfo?.validade}
         isTrial={licenseInfo?.isTrial}
+      />
+
+      {/* Modal de Conexão WhatsApp Direto */}
+      <ModalConexaoWhatsApp
+        isOpen={modalWhatsAppAberto}
+        onClose={() => setModalWhatsAppAberto(false)}
       />
     </>
   );

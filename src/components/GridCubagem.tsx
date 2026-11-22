@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useRomaneioStore, type RomaneioItem } from '../store/useRomaneioStore';
-import { Trash2, Plus, AlertCircle, Copy, ClipboardPaste, SlidersHorizontal } from 'lucide-react';
+import { Trash2, Plus, AlertCircle, Copy, ClipboardPaste, SlidersHorizontal, Check, Calculator } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { calcularVolumeM3, calcularMetrosQuadrados, calcularMetrosLineares, validarToleranciaMedida, formatarDimensao } from '../utils/cubagemEngine';
 import { useConfigStore } from '../store/useConfigStore';
@@ -296,6 +296,8 @@ interface LinhaGridRowProps {
   linhaIncompleta: boolean;
   pacoteId: string;
   exibirMetragensExtras: boolean;
+  isSelecionada: boolean;
+  onToggleSelecionar: (itemId: string) => void;
   onChangeField: (itemId: string, field: keyof RomaneioItem, value: string) => void;
   onChangeLargura: (itemId: string, value: string) => void;
   onBlurField: (itemId: string, field: keyof RomaneioItem, value: string | number) => void;
@@ -312,6 +314,8 @@ const LinhaGridRowComponent = ({
   linhaIncompleta,
   pacoteId,
   exibirMetragensExtras,
+  isSelecionada,
+  onToggleSelecionar,
   onChangeField,
   onChangeLargura,
   onBlurField,
@@ -328,14 +332,18 @@ const LinhaGridRowComponent = ({
   return (
     <tr
       className={`transition-colors group ${
-        linhaIncompleta
+        isSelecionada
+          ? 'bg-emerald-500/10 dark:bg-emerald-950/30 font-medium'
+          : linhaIncompleta
           ? 'bg-amber-50/50 dark:bg-amber-950/20'
           : tolerancia.invalido
           ? 'bg-amber-50/30 dark:bg-amber-950/15'
           : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
       }`}
     >
-      <td className="px-4 py-2 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">
+      <td className={`px-4 py-2 text-center font-bold text-xs transition-colors ${
+        isSelecionada ? 'text-emerald-700 dark:text-emerald-450 border-l-4 border-l-emerald-500 font-black' : 'text-slate-400 dark:text-slate-500'
+      }`}>
         {index + 1}
       </td>
 
@@ -395,8 +403,27 @@ const LinhaGridRowComponent = ({
         {m3 > 0 ? m3.toFixed(3) : '-'}
       </td>
 
-      <td className="px-4 py-2 text-center w-20">
-        <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+      <td className="px-3 py-2 text-center w-28">
+        <div className={`flex items-center justify-center gap-1 transition-all ${
+          isSelecionada ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+        }`}>
+          <button
+            type="button"
+            onClick={() => onToggleSelecionar(item.id)}
+            tabIndex={-1}
+            className={`transition-all p-2 rounded-lg cursor-pointer shadow-sm ${
+              isSelecionada
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30 ring-1 ring-emerald-500'
+                : 'text-slate-400 hover:text-emerald-500 dark:text-slate-500 dark:hover:text-emerald-400 bg-slate-50 dark:bg-slate-950 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 dark:border dark:border-slate-800'
+            }`}
+            title={isSelecionada ? "Remover da soma (linha selecionada)" : "Marcar linha para somar (+)"}
+          >
+            {isSelecionada ? (
+              <Check size={14} strokeWidth={3} />
+            ) : (
+              <Plus size={14} strokeWidth={2.5} />
+            )}
+          </button>
           <button
             type="button"
             onClick={() => onDuplicate(pacoteId, item.id)}
@@ -429,7 +456,8 @@ const LinhaGridRow = React.memo(LinhaGridRowComponent, (prev, next) => {
     prev.linhaIncompleta === next.linhaIncompleta &&
     prev.tipoRomaneio === next.tipoRomaneio &&
     prev.pacoteId === next.pacoteId &&
-    prev.exibirMetragensExtras === next.exibirMetragensExtras
+    prev.exibirMetragensExtras === next.exibirMetragensExtras &&
+    prev.isSelecionada === next.isSelecionada
   );
 });
 
@@ -587,6 +615,14 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
       });
       return;
     }
+    setLinhasSelecionadas(prev => {
+      if (prev.has(itemId)) {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      }
+      return prev;
+    });
     removeItem(pacoteId, itemId);
   }, [pacoteId, removeItem]);
 
@@ -762,6 +798,24 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
     }
   }, [handlePasteExcel]);
 
+  const [linhasSelecionadas, setLinhasSelecionadas] = useState<Set<string>>(new Set());
+
+  const handleToggleSelecionar = useCallback((itemId: string) => {
+    setLinhasSelecionadas(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleLimparSelecao = useCallback(() => {
+    setLinhasSelecionadas(new Set());
+  }, []);
+
   const totaisCalculados = useMemo(() => {
     if (!pacote) return { totalPacoteM3: 0, totalPacoteM2: 0, totalPacoteML: 0, totalPacotePecas: 0, totalSomaLarguras: 0 };
     let totalPacoteM3 = 0;
@@ -791,6 +845,42 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
     return { totalPacoteM3, totalPacoteM2, totalPacoteML, totalPacotePecas, totalSomaLarguras };
   }, [pacote?.itens, tipoRomaneio]);
 
+  const totaisSelecionados = useMemo(() => {
+    if (!pacote || linhasSelecionadas.size === 0) {
+      return { totalM3: 0, totalM2: 0, totalML: 0, totalPecas: 0, totalSomaLarguras: 0, count: 0 };
+    }
+
+    let totalM3 = 0;
+    let totalM2 = 0;
+    let totalML = 0;
+    let totalPecas = 0;
+    let totalSomaLarguras = 0;
+    let count = 0;
+
+    const itens = pacote.itens;
+    for (let i = 0; i < itens.length; i++) {
+      const item = itens[i];
+      if (linhasSelecionadas.has(item.id)) {
+        count++;
+        if (item.espessura && item.largura && item.comprimento && item.quantidade) {
+          totalM3 += calcularVolumeM3(item.espessura, item.largura, item.comprimento, item.quantidade, tipoRomaneio);
+          totalM2 += calcularMetrosQuadrados(item.largura, item.comprimento, item.quantidade, tipoRomaneio);
+          totalML += calcularMetrosLineares(item.comprimento, item.quantidade, tipoRomaneio);
+          totalPecas += Number(item.quantidade) || 0;
+        }
+        if (tipoRomaneio === 'aberta' && item.largura) {
+          const partes = String(item.largura)
+            .split(/[\s-]+/)
+            .map(p => Number(p.trim().replace(',', '.')))
+            .filter(x => !isNaN(x) && x > 0);
+          totalSomaLarguras += partes.reduce((a, b) => a + b, 0);
+        }
+      }
+    }
+
+    return { totalM3, totalM2, totalML, totalPecas, totalSomaLarguras, count };
+  }, [pacote?.itens, linhasSelecionadas, tipoRomaneio]);
+
   if (!pacote) return null;
 
   const podeBloqueio = pacote.itens.length > 0 && !ultimaLinhaCompleta();
@@ -808,11 +898,31 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
     >
       {/* Barra de Ações Rápidas do Pacote */}
       <div className="bg-slate-50/70 dark:bg-slate-950/40 px-5 py-2.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-        <span className="font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-          <span>Pacote Nº {pacote.numero}</span>
-          <span className="text-slate-300 dark:text-slate-700">|</span>
-          <span className="text-emerald-600 dark:text-emerald-450">{pacote.itens.length} linha(s)</span>
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <span>Pacote Nº {pacote.numero}</span>
+            <span className="text-slate-300 dark:text-slate-700">|</span>
+            <span className="text-emerald-600 dark:text-emerald-450">{pacote.itens.length} linha(s)</span>
+          </span>
+
+          {linhasSelecionadas.size > 0 && (
+            <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 px-2.5 py-1 rounded-lg text-emerald-700 dark:text-emerald-300 font-bold text-xs">
+              <span className="flex items-center gap-1">
+                <Calculator size={13} className="text-emerald-600 dark:text-emerald-400" />
+                <span>{totaisSelecionados.count} marcada(s):</span>
+                <strong className="text-emerald-800 dark:text-emerald-200">{totaisSelecionados.totalM3.toFixed(3)} M³</strong>
+              </span>
+              <button
+                type="button"
+                onClick={handleLimparSelecao}
+                className="text-[10px] text-slate-400 hover:text-red-500 underline ml-1 cursor-pointer"
+                title="Desmarcar todas as linhas"
+              >
+                Limpar
+              </button>
+            </div>
+          )}
+        </div>
 
         <div className="flex items-center gap-2">
           <button
@@ -854,7 +964,7 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
                 </>
               )}
               <th className="px-4 py-3.5 text-center">Total M³</th>
-              <th className="px-4 py-3.5 text-center w-20"></th>
+              <th className="px-3 py-3.5 text-center w-28"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -872,6 +982,8 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
                   linhaIncompleta={linhaIncompleta}
                   pacoteId={pacoteId}
                   exibirMetragensExtras={exibirMetragensExtras}
+                  isSelecionada={linhasSelecionadas.has(item.id)}
+                  onToggleSelecionar={handleToggleSelecionar}
                   onChangeField={handleChangeField}
                   onChangeLargura={handleChangeLargura}
                   onBlurField={handleBlurField}
@@ -884,6 +996,47 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
             })}
           </tbody>
           <tfoot className="bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800">
+            {linhasSelecionadas.size > 0 && (
+              <tr className="bg-emerald-500/10 dark:bg-emerald-950/40 border-b border-emerald-500/20 text-emerald-950 dark:text-emerald-100">
+                <td colSpan={4} className="px-5 py-3 font-black text-right text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-450">
+                  <div className="flex items-center justify-end gap-2">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black tracking-normal">
+                      <Plus size={11} strokeWidth={3} /> {totaisSelecionados.count} linha(s) somada(s)
+                    </span>
+                    <span>Soma das Linhas Marcadas:</span>
+                  </div>
+                </td>
+                <td className="px-5 py-3 text-center font-black text-emerald-800 dark:text-emerald-300">
+                  {tipoRomaneio === 'aberta'
+                    ? `${totaisSelecionados.totalSomaLarguras % 1 === 0 ? totaisSelecionados.totalSomaLarguras : totaisSelecionados.totalSomaLarguras.toFixed(1).replace('.', ',')} cm`
+                    : `${totaisSelecionados.totalPecas} Peças`}
+                </td>
+                {exibirMetragensExtras && (
+                  <>
+                    <td className="px-5 py-3 text-center font-black text-emerald-800 dark:text-emerald-300">
+                      {totaisSelecionados.totalML.toFixed(2)} ML
+                    </td>
+                    <td className="px-5 py-3 text-center font-black text-emerald-800 dark:text-emerald-300">
+                      {totaisSelecionados.totalM2.toFixed(2)} M²
+                    </td>
+                  </>
+                )}
+                <td className="px-5 py-3 text-center font-black text-emerald-600 dark:text-emerald-450 text-sm">
+                  {totaisSelecionados.totalM3.toFixed(3)} M³
+                </td>
+                <td className="px-2 py-3 text-center w-28">
+                  <button
+                    type="button"
+                    onClick={handleLimparSelecao}
+                    className="text-[11px] font-bold text-slate-500 hover:text-red-500 hover:underline transition-colors cursor-pointer"
+                    title="Desmarcar todas as linhas deste pacote"
+                  >
+                    Desmarcar
+                  </button>
+                </td>
+              </tr>
+            )}
+
             <tr>
               <td colSpan={4} className="px-5 py-4 font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest text-right text-xs">
                 Totais do Pacote {pacote.numero}:
@@ -906,11 +1059,61 @@ export default function GridCubagem({ pacoteId }: { pacoteId: string; pacoteInde
               <td className="px-5 py-4 text-center font-black text-emerald-600 dark:text-emerald-450">
                 {totaisCalculados.totalPacoteM3.toFixed(3)} M³
               </td>
-              <td></td>
+              <td className="w-28"></td>
             </tr>
           </tfoot>
         </table>
       </div>
+
+      {linhasSelecionadas.size > 0 && (
+        <div className="bg-emerald-600 dark:bg-emerald-700 text-white px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-md border-t border-emerald-500">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex items-center gap-1.5 font-bold bg-white/20 px-2.5 py-1 rounded-lg">
+              <Calculator size={15} className="text-white" />
+              <span>{totaisSelecionados.count} linha(s) marcada(s)</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-emerald-100 font-medium">Volume:</span>
+              <span className="font-black text-sm bg-white/25 px-2.5 py-1 rounded-lg">
+                {totaisSelecionados.totalM3.toFixed(3)} M³
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-emerald-100 font-medium">
+                {tipoRomaneio === 'aberta' ? 'Soma Larguras:' : 'Peças:'}
+              </span>
+              <span className="font-bold bg-white/15 px-2 py-1 rounded-lg">
+                {tipoRomaneio === 'aberta'
+                  ? `${totaisSelecionados.totalSomaLarguras % 1 === 0 ? totaisSelecionados.totalSomaLarguras : totaisSelecionados.totalSomaLarguras.toFixed(1).replace('.', ',')} cm`
+                  : `${totaisSelecionados.totalPecas} Peças`}
+              </span>
+            </div>
+            {exibirMetragensExtras && (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-emerald-100 font-medium">ML:</span>
+                  <span className="font-bold bg-white/15 px-2 py-1 rounded-lg">
+                    {totaisSelecionados.totalML.toFixed(2)} ML
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-emerald-100 font-medium">M²:</span>
+                  <span className="font-bold bg-white/15 px-2 py-1 rounded-lg">
+                    {totaisSelecionados.totalM2.toFixed(2)} M²
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleLimparSelecao}
+            className="text-xs bg-white text-emerald-800 hover:bg-emerald-50 hover:text-emerald-900 px-3.5 py-1.5 rounded-lg font-black transition-all cursor-pointer shadow-sm active:scale-95"
+          >
+            Limpar Seleção
+          </button>
+        </div>
+      )}
 
       <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex items-center justify-center gap-4">
         {podeBloqueio && (

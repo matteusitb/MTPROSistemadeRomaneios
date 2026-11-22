@@ -47,7 +47,13 @@
     --shadow-premium: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.15);
   }
 
+  /* Comportamento Desktop Nativo: impede arrasto acidental de mídias */
+  *, *::before, *::after {
+    -webkit-user-drag: none;
+  }
+
   body {
+    user-select: none;
     background-color: var(--main-bg);
     color: var(--text-dark);
     font-family: var(--font-sans);
@@ -55,6 +61,11 @@
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.01em;
     transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  /* Permite seleção de texto em campos de digitação, tabelas e blocos informativos */
+  input, textarea, [contenteditable="true"], .selectable-text, .font-mono, td, th {
+    user-select: text;
   }
   
   h1, h2, h3, h4, h5, h6 {
@@ -712,6 +723,10 @@ body.dark-mode ::-webkit-scrollbar-thumb:hover {
 }
 
 /* --- SWEETALERT2 DARK MODE AND CUSTOM STYLES --- */
+.swal2-container {
+  z-index: 9999999 !important;
+}
+
 body.dark-mode .swal2-popup {
   background-color: #1e293b !important; /* Slate 800 para combinar com os cards premium */
   border: 1px solid #334155 !important;

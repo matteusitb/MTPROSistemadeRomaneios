@@ -77,6 +77,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Compartilhamento & Arquivos (WhatsApp)
   saveTempPdf: (fileName, base64Data) => ipcRenderer.invoke('save-temp-pdf', fileName, base64Data),
   showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
-  openExternalUrl: (url) => ipcRenderer.invoke('open-external-url', url)
+  openExternalUrl: (url) => ipcRenderer.invoke('open-external-url', url),
+  setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
+
+  // WhatsApp Direto com Baileys
+  whatsapp: {
+    getStatus: () => ipcRenderer.invoke('whatsapp-get-status'),
+    connect: () => ipcRenderer.invoke('whatsapp-connect'),
+    disconnect: () => ipcRenderer.invoke('whatsapp-disconnect'),
+    logout: () => ipcRenderer.invoke('whatsapp-logout'),
+    sendRomaneio: (data) => ipcRenderer.invoke('whatsapp-send-romaneio', data),
+    onStatusChange: (callback) => {
+      const subscription = (_, data) => callback(data);
+      ipcRenderer.on('whatsapp-status', subscription);
+      return () => ipcRenderer.removeListener('whatsapp-status', subscription);
+    }
+  }
 });
 

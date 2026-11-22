@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, session, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const initSqlJs = require('sql.js');
@@ -6,6 +6,15 @@ const os = require('os');
 const crypto = require('crypto');
 const { execSync } = require('child_process');
 const { autoUpdater } = require('electron-updater');
+const whatsappService = require('./whatsappService.cjs');
+
+// Tratamento global para evitar crashes silenciosos por rejeição de sockets assíncronos
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ [Uncaught Exception Electron]:', err?.message || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.warn('⚠️ [Unhandled Rejection Electron]:', reason?.message || reason);
+});
 
 let db;
 let SQLInstance = null;
@@ -594,8 +603,17 @@ async function verificarLicencaLocal() {
   }
 }
 
+function isTrustedSender(event) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  return event.senderFrame === mainWindow.webContents.mainFrame;
+}
+
 function protectedHandle(channel, callback) {
   ipcMain.handle(channel, async (event, ...args) => {
+    if (!isTrustedSender(event)) {
+      console.warn(`[AppSec] Tentativa de acesso não autorizada ao canal protegido '${channel}'.`);
+      return { success: false, error: 'Acesso negado: origem da chamada não autorizada.' };
+    }
     if (!sistemaAtivado) {
       console.warn(`Tentativa de acesso ao canal protegido '${channel}' sem ativação ativa.`);
       return { success: false, error: 'Sistema bloqueado. Por favor, ative a licença de uso do sistema.' };
@@ -1068,22 +1086,68 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    minWidth: 1024,
+    minHeight: 680,
+    show: false,
+    backgroundColor: '#0f172a',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
+      nodeIntegrationInWorker: false,
       contextIsolation: true,
-      devTools: true,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      devTools: isDev,
     },
   });
 
-  mainWindow.maximize();
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.maximize();
+    mainWindow.show();
+  });
 
+  // Bloqueio rigoroso de abertura de janelas filhas não autorizadas
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https:') || url.startsWith('http:') || url.startsWith('whatsapp:')) {
-      shell.openExternal(url);
-      return { action: 'deny' };
+    try {
+      const parsed = new URL(url);
+      if (['https:', 'whatsapp:'].includes(parsed.protocol)) {
+        shell.openExternal(url);
+      }
+    } catch (_) {}
+    return { action: 'deny' };
+  });
+
+  // Prevenção de navegação não autorizada da janela principal
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    const isAllowed = isDev
+      ? navigationUrl.startsWith('http://localhost:5173')
+      : navigationUrl.startsWith('file://');
+    if (!isAllowed) {
+      event.preventDefault();
+      try {
+        const parsed = new URL(navigationUrl);
+        if (['https:', 'whatsapp:'].includes(parsed.protocol)) {
+          shell.openExternal(navigationUrl);
+        }
+      } catch (_) {}
     }
-    return { action: 'allow' };
+  });
+
+  // Menu de contexto nativo com atalhos de edição (Copiar, Colar, Recortar, etc.)
+  mainWindow.webContents.on('context-menu', (event, params) => {
+    if (params.isEditable) {
+      const editMenu = Menu.buildFromTemplate([
+        { role: 'undo', label: 'Desfazer' },
+        { role: 'redo', label: 'Refazer' },
+        { type: 'separator' },
+        { role: 'cut', label: 'Recortar' },
+        { role: 'copy', label: 'Copiar' },
+        { role: 'paste', label: 'Colar' },
+        { role: 'selectAll', label: 'Selecionar Tudo' }
+      ]);
+      editMenu.popup({ window: mainWindow });
+    }
   });
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
@@ -1106,6 +1170,32 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  const isDev = !app.isPackaged;
+
+  // Bloqueio de permissões sensíveis não utilizadas pela aplicação
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowedPermissions = ['clipboard-read', 'clipboard-write'];
+    if (allowedPermissions.includes(permission)) {
+      return callback(true);
+    }
+    return callback(false);
+  });
+
+  // Configuração central de Content Security Policy (CSP) nos headers HTTP locais
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const csp = isDev
+      ? "default-src 'self' http://localhost:5173; script-src 'self' 'unsafe-inline' http://localhost:5173; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: http://localhost:5173; connect-src 'self' http://localhost:5173 ws://localhost:5173 https://*.supabase.co wss://*.supabase.co https://api.github.com; object-src 'none';"
+      : "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.github.com; object-src 'none';";
+
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [csp],
+        'X-Content-Type-Options': ['nosniff'],
+        'X-Frame-Options': ['DENY']
+      }
+    });
+  });
   try {
     await initDB();
   } catch (err) {
@@ -1125,6 +1215,7 @@ app.whenReady().then(async () => {
   }
 
   createWindow();
+  whatsappService.init(mainWindow);
 
   // Verificação automática de atualizações ao inicializar (em produção)
   if (app.isPackaged) {
@@ -1444,7 +1535,10 @@ protectedHandle('save-romaneio', (event, data) => {
 
 protectedHandle('update-romaneio', (event, data) => {
   try {
-    const { id } = data;
+    const numId = Number(data.id);
+    if (!numId || isNaN(numId) || numId <= 0) {
+      return { success: false, error: 'ID de romaneio inválido.' };
+    }
 
     const cliente_id = getOrInsert('clientes', data.cliente);
 
@@ -1455,23 +1549,34 @@ protectedHandle('update-romaneio', (event, data) => {
 
     db.run(
       `UPDATE romaneios SET data = ?, cliente_id = ?, especie_id = ?, total_m3 = ?, total_m2 = ?, total_ml = ?, tipo_romaneio = ? WHERE id = ?`,
-      [data.data, cliente_id, firstEspecieId, data.total_m3, data.total_m2 || 0, data.total_ml, data.tipo_romaneio || 'padrao', id]
+      [data.data, cliente_id, firstEspecieId, data.total_m3, data.total_m2 || 0, data.total_ml, data.tipo_romaneio || 'padrao', numId]
     );
 
-    const oldPackages = db.exec(`SELECT id FROM romaneio_pacotes WHERE romaneio_id = ${id}`);
-    if (oldPackages.length > 0) {
-      const pacoteIds = oldPackages[0].values.map(v => v[0]);
-      pacoteIds.forEach(pid => {
-        db.run(`DELETE FROM romaneio_itens WHERE pacote_id = ${pid}`);
-      });
+    const oldPackagesStmt = db.prepare('SELECT id FROM romaneio_pacotes WHERE romaneio_id = ?');
+    oldPackagesStmt.bind([numId]);
+    const pacoteIds = [];
+    while (oldPackagesStmt.step()) {
+      pacoteIds.push(oldPackagesStmt.getAsObject().id);
     }
-    db.run(`DELETE FROM romaneio_pacotes WHERE romaneio_id = ${id}`);
+    oldPackagesStmt.free();
+
+    if (pacoteIds.length > 0) {
+      const delItemStmt = db.prepare('DELETE FROM romaneio_itens WHERE pacote_id = ?');
+      for (const pid of pacoteIds) {
+        delItemStmt.run([Number(pid)]);
+      }
+      delItemStmt.free();
+    }
+
+    const delPackStmt = db.prepare('DELETE FROM romaneio_pacotes WHERE romaneio_id = ?');
+    delPackStmt.run([numId]);
+    delPackStmt.free();
 
     data.pacotes.forEach(p => {
       const especie_id = getOrInsertEspecie(p.especie);
       db.run(
         `INSERT INTO romaneio_pacotes (romaneio_id, numero_pacote, total_m3, total_m2, total_ml, especie_id) VALUES (?, ?, ?, ?, ?, ?)`,
-        [id, p.numero_pacote, p.total_m3, p.total_m2 || 0, p.total_ml, especie_id]
+        [numId, p.numero_pacote, p.total_m3, p.total_m2 || 0, p.total_ml, especie_id]
       );
       const pacote_id = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
 
@@ -1484,7 +1589,7 @@ protectedHandle('update-romaneio', (event, data) => {
     });
 
     saveDB();
-    return { success: true, id };
+    return { success: true, id: numId };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -1855,7 +1960,12 @@ protectedHandle('reset-romaneios-db', () => {
 
 protectedHandle('save-temp-pdf', async (event, fileName, base64Data) => {
   try {
-    const sanitizedFileName = (fileName || 'Romaneio.pdf').replace(/[\\/:*?"<>|]/g, '_');
+    if (typeof base64Data !== 'string' || !base64Data) {
+      return { success: false, error: 'Dados em Base64 inválidos.' };
+    }
+    const cleanBaseName = path.basename(String(fileName || 'Romaneio')).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeFileName = `${cleanBaseName.slice(0, 80) || 'Romaneio'}.pdf`;
+
     let targetDir = path.join(app.getPath('downloads'), 'Romaneios');
     if (!fs.existsSync(targetDir)) {
       try {
@@ -1864,8 +1974,11 @@ protectedHandle('save-temp-pdf', async (event, fileName, base64Data) => {
         targetDir = app.getPath('temp');
       }
     }
-    const filePath = path.join(targetDir, sanitizedFileName);
+    const filePath = path.join(targetDir, safeFileName);
     const buffer = Buffer.from(base64Data, 'base64');
+    if (buffer.length > 30 * 1024 * 1024) {
+      return { success: false, error: 'Arquivo excede o tamanho máximo de 30MB.' };
+    }
     fs.writeFileSync(filePath, buffer);
     return { success: true, filePath };
   } catch (error) {
@@ -1887,14 +2000,51 @@ protectedHandle('show-item-in-folder', async (event, filePath) => {
 
 protectedHandle('open-external-url', async (event, url) => {
   try {
-    if (url && (url.startsWith('https://') || url.startsWith('http://') || url.startsWith('whatsapp://'))) {
-      await shell.openExternal(url);
-      return { success: true };
+    if (url && typeof url === 'string') {
+      const parsed = new URL(url);
+      if (['https:', 'whatsapp:'].includes(parsed.protocol)) {
+        await shell.openExternal(url);
+        return { success: true };
+      }
     }
-    return { success: false, error: 'URL inválida' };
+    return { success: false, error: 'Protocolo de URL não permitido ou URL inválida' };
   } catch (error) {
     return { success: false, error: error.message };
   }
+});
+
+// Sincronização do tema da janela nativa do OS
+ipcMain.handle('set-theme', (event, theme) => {
+  if (!isTrustedSender(event)) {
+    return { success: false, error: 'Origem não autorizada' };
+  }
+  if (['dark', 'light', 'system'].includes(theme)) {
+    nativeTheme.themeSource = theme;
+    return { success: true };
+  }
+  return { success: false, error: 'Tema inválido' };
+});
+
+// ─── IPC: WHATSAPP DIRETO (BAILEYS) ──────────────────────────────────────────
+
+protectedHandle('whatsapp-get-status', async () => {
+  return whatsappService.getStatus();
+});
+
+protectedHandle('whatsapp-connect', async () => {
+  return await whatsappService.connect();
+});
+
+protectedHandle('whatsapp-disconnect', async () => {
+  return await whatsappService.disconnect();
+});
+
+protectedHandle('whatsapp-logout', async () => {
+  return await whatsappService.logout();
+});
+
+protectedHandle('whatsapp-send-romaneio', async (event, payload) => {
+  return await whatsappService.sendRomaneio(payload);
 });
 
 // ─── IPC: GET HARDWARE ID ───────────────────────────────────────────────────

@@ -43,6 +43,19 @@ export const ModalAtivacao: React.FC<ModalAtivacaoProps> = ({
     }
   }, [isOpen]);
 
+  // Fechamento acessível com a tecla Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleCopyId = () => {

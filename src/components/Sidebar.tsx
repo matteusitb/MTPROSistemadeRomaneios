@@ -44,9 +44,11 @@ export default function Sidebar({ mobileOpen, setMobileOpen }: SidebarProps) {
     if (nextDark) {
       document.body.classList.add('dark-mode');
       localStorage.setItem('theme', 'dark');
+      window.electronAPI?.setTheme?.('dark');
     } else {
       document.body.classList.remove('dark-mode');
       localStorage.setItem('theme', 'light');
+      window.electronAPI?.setTheme?.('light');
     }
   };
 
